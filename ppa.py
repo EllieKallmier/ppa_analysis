@@ -111,6 +111,9 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
 
 
 def calc_ppa_volume_profile(ppa_volume, residual_profiles, contract_type):
+    # TODO: update this to align with pay-as-produced, pay-as-consumed, etc.
+    # TODO: consider how scaled and/or hybrid profiles created in-tool will be 
+    # handled by this function.
     if ppa_volume == 'RE Uptill Load' or contract_type == 'On-site RE Generator':
         volume_profile = residual_profiles['Used RE']
     else:
@@ -119,6 +122,8 @@ def calc_ppa_volume_profile(ppa_volume, residual_profiles, contract_type):
 
 
 def calc_wholesale_volume_profile(wholesale_volume, residual_profiles):
+    # TODO: figure put if (and how) changes to PPA volume wording might impact
+    # this function
     if wholesale_volume == 'RE Uptill Load':
         volume_profile = residual_profiles['Used RE']
     elif wholesale_volume == 'All RE':
@@ -131,6 +136,7 @@ def calc_wholesale_volume_profile(wholesale_volume, residual_profiles):
 
 
 def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles):
+    # TODO: update in alignment with updates to ppa_volume types
     if (contract_type in ['Off-site - Contract for Difference', 'Off-site - Tariff Pass Through'] and
             ppa_volume == 'All RE'):
         excess_to_sell = residual_profiles['Excess RE']
