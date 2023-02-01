@@ -66,12 +66,27 @@ def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor
     profiles = profiles.copy()
     
     if scaling_period == "Yearly":
+        # creates a new df with entries matching the sampling time:
+        # DateTime      total_load      gen_id      ...
+        # 2019          123456          112333      ...
+        # 2020          234567          223344      ...
+        # ...           ...             ...         ...
+        # each column entry is the sum of all data for that year.
         scaling_df = profiles.groupby(profiles['DateTime'].dt.year).sum() 
+
+        # scale the total_load value by the scaling factor (if supplied)
         scaling_df["total_load"] *= scaling_factor
+        scale_by = 1
+        
         for date in scaling_df.index:
             for gen_id in gen_ids:
-                scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
-                    scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
+                # using the matching time-stamped data, normalise/scale the generator
+                # profile data by (total load) / (total generated) * (half hourly generated)
+                # First, check whether total generated RE is >= total load. 
+                # If not, don't scale (penalties can then be applied later if required)
+                if scaling_df.loc[date, "total_load"] <= scaling_df.loc[date, gen_id]:
+                    scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
+                        scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
 
                 profiles.loc[(profiles.DateTime.dt.year==date), gen_id] = profiles[gen_id] * scale_by
 
@@ -80,19 +95,21 @@ def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor
         scaling_df["total_load"] *= scaling_factor
         for date in scaling_df.index:
             for gen_id in gen_ids:
-                scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
-                    scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
-
+                if scaling_df.loc[date, "total_load"] <= scaling_df.loc[date, gen_id]:
+                    scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
+                        scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
+ 
                 profiles.loc[(profiles.DateTime.dt.to_period('Q')==date), gen_id] = profiles[gen_id] * scale_by
-        
+            
 
     elif scaling_period == "Monthly":
         scaling_df = profiles.groupby(profiles["DateTime"].dt.to_period('m')).sum()
         scaling_df["total_load"] *= scaling_factor
         for date in scaling_df.index:
             for gen_id in gen_ids:
-                scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
-                    scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
+                if scaling_df.loc[date, "total_load"] <= scaling_df.loc[date, gen_id]:
+                    scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
+                        scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
 
                 profiles.loc[(profiles.DateTime.dt.to_period('m')==date), gen_id] = profiles[gen_id] * scale_by
         
