@@ -4,6 +4,11 @@ import tariffs
 import ppa
 import numpy as np
  
+# TODO: add intake for emissions profiles here
+# TODO: add field for scaling factor (for generation profile) - default == 1, float
+# TODO: incorporate hybrids here? Could change type of 'Generator ID' to match the function call for hybrids? - Or add more than 1 'Generator ID' field and create hybrid here?
+# --> idea: add 'Hybrids' input: list of gen ids to hybridise w/ percentages and use Generator ID as the name for new hybrid.
+
 
 def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_set):
     """
