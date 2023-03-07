@@ -39,8 +39,8 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
                         'Off-site - Contract for Difference', 'Off-site - Tariff Pass Through',
                         'Off-site - Physical Hedge', 'On-site RE Generator' or 'No PPA'
     :param ppa_volume: string, determines how the volume traded through the PPA is calculated on a 30 min basis,
-                      should be on of 'RE Uptill Load', 'All RE'
-    :param wholesale_volume: string, determines how much volume is purchase at wholesale prices, should be one of
+                      should be one of 'As Consumed', 'As Produced', 'Shaped'
+    :param wholesale_volume: string, determines how much volume is purchased at wholesale prices, should be one of
                             'All RE', 'RE Uptill Load', 'All Load' or 'None'
     :param contract_price: float, price paid for ppa volume
     :param excess_buy_price: float, price paid for excess re, only applies under 'On-site RE Generator'
@@ -74,6 +74,9 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
         excess_cost = 0.0
 
     if contract_type in wholesale_purchase_methods and wholesale_volume is not None:
+        # TODO: consider whether to add a default if Off-site Physical Hedge is chosen
+        # or whether to change the contract type options? (I.e. if off-site p.h. chosen, 
+        # wholesale volume should not be None.)
         wholesale_cost = wholesale_purchase_methods[contract_type](wholesale_volume_profile, scaled_price_profile,
                                                                    load_mlf, load_dlf)
     else:
@@ -114,7 +117,7 @@ def calc_ppa_volume_profile(ppa_volume, residual_profiles, contract_type):
     # TODO: update this to align with pay-as-produced, pay-as-consumed, etc.
     # TODO: consider how scaled and/or hybrid profiles created in-tool will be 
     # handled by this function.
-    if ppa_volume == 'RE Uptill Load' or contract_type == 'On-site RE Generator':
+    if ppa_volume == 'As Consumed' or contract_type == 'On-site RE Generator':
         volume_profile = residual_profiles['Used RE']
     else:
         volume_profile = residual_profiles['RE Generator']
@@ -122,8 +125,10 @@ def calc_ppa_volume_profile(ppa_volume, residual_profiles, contract_type):
 
 
 def calc_wholesale_volume_profile(wholesale_volume, residual_profiles):
-    # TODO: figure put if (and how) changes to PPA volume wording might impact
-    # this function
+    # Leave these options at the moment - wholesale volume isn't necessarily linked
+    # or determined by PPA volume. 
+    # TODO: check what we want to do re: partial firming under retail PPA types, 
+    # or to see if wording here needs updating. 
     if wholesale_volume == 'RE Uptill Load':
         volume_profile = residual_profiles['Used RE']
     elif wholesale_volume == 'All RE':
@@ -136,9 +141,8 @@ def calc_wholesale_volume_profile(wholesale_volume, residual_profiles):
 
 
 def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles):
-    # TODO: update in alignment with updates to ppa_volume types
     if (contract_type in ['Off-site - Contract for Difference', 'Off-site - Tariff Pass Through'] and
-            ppa_volume == 'All RE'):
+            ppa_volume == 'As Produced'):
         excess_to_sell = residual_profiles['Excess RE']
     elif contract_type in ['Off-site - Physical Hedge', 'On-site RE Generator']:
         excess_to_sell = residual_profiles['Excess RE']
@@ -149,23 +153,23 @@ def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles)
 
 # PPA calc functions
 
+# Note: I've added a factor to convert manually to MWh, as all input load profiles are in kWh
+# Could update this to include an input flag to signal kWh/MWh input from user
 
 def cfd_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
-    # ETA: convert manually to MWh, as all input load profiles are in kWh
     cost = np.sum((contract_price - price_profile) * ppa_volume_profile/1000)
     return cost
 
 
 def flat_rate_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
-    # ETA: convert manually to MWh, as all input load profiles are in kWh
     cost = np.sum(contract_price * ppa_volume_profile/1000 * mlf * dlf)
     return cost
 
 
 def flat_rate_onsite_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
-    # ETA: convert manually to MWh, as all input load profiles are in kWh
     cost = np.sum(contract_price * ppa_volume_profile/1000)
     return cost
+
 
 
 ppa_methods = {'Off-site - Contract for Difference': cfd_calc,
@@ -196,7 +200,6 @@ def excess_sale_calc(excess_sale_profile, excess_sale_price):
 
 
 def wholesale(wholesale_volume_profile, price_profile, mlf, dlf):
-    # ETA: convert manually to MWh, as all input load profiles are in kWh
     cost = np.sum(wholesale_volume_profile/1000 * price_profile * mlf * dlf)
     return cost
 
