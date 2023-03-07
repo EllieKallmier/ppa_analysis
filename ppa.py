@@ -39,7 +39,7 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
                         'Off-site - Contract for Difference', 'Off-site - Tariff Pass Through',
                         'Off-site - Physical Hedge', 'On-site RE Generator' or 'No PPA'
     :param ppa_volume: string, determines how the volume traded through the PPA is calculated on a 30 min basis,
-                      should be one of 'As Consumed', 'As Produced', 'Shaped'
+                      should be one of 'Pay As Consumed', 'Pay As Produced', 'Shaped'
     :param wholesale_volume: string, determines how much volume is purchased at wholesale prices, should be one of
                             'All RE', 'RE Uptill Load', 'All Load' or 'None'
     :param contract_price: float, price paid for ppa volume
@@ -114,10 +114,9 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
 
 
 def calc_ppa_volume_profile(ppa_volume, residual_profiles, contract_type):
-    # TODO: update this to align with pay-as-produced, pay-as-consumed, etc.
     # TODO: consider how scaled and/or hybrid profiles created in-tool will be 
     # handled by this function.
-    if ppa_volume == 'As Consumed' or contract_type == 'On-site RE Generator':
+    if ppa_volume == 'Pay As Consumed' or contract_type == 'On-site RE Generator':
         volume_profile = residual_profiles['Used RE']
     else:
         volume_profile = residual_profiles['RE Generator']
@@ -142,7 +141,7 @@ def calc_wholesale_volume_profile(wholesale_volume, residual_profiles):
 
 def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles):
     if (contract_type in ['Off-site - Contract for Difference', 'Off-site - Tariff Pass Through'] and
-            ppa_volume == 'As Produced'):
+            ppa_volume == 'Pay As Produced'):
         excess_to_sell = residual_profiles['Excess RE']
     elif contract_type in ['Off-site - Physical Hedge', 'On-site RE Generator']:
         excess_to_sell = residual_profiles['Excess RE']
@@ -153,7 +152,7 @@ def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles)
 
 # PPA calc functions
 
-# Note: I've added a factor to convert manually to MWh, as all input load profiles are in kWh
+# Note: added a factor to convert manually to MWh, as all input load profiles are in kWh
 # Could update this to include an input flag to signal kWh/MWh input from user
 
 def cfd_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
