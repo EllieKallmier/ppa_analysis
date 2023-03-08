@@ -53,7 +53,7 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
     price_id = scenario_row['Wholesale_Price_ID']
     #emissions_id = scenario_row['Emissions_Region_ID']
 
-    load_profiles['DateTime'] = pd.to_datetime(load_profiles["DateTime"], format="%d/%m/%Y %H:%M")
+    load_profiles['DateTime'] = pd.to_datetime(load_profiles["DateTime"])#, format="%d/%m/%Y %H:%M")
     load_profiles[load_id] = pd.to_numeric(load_profiles[load_id])
     load_profiles[generator_id] = pd.to_numeric(load_profiles[generator_id])
 
@@ -71,6 +71,6 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
                                         wholesale_volume=scenario_row['Wholesale_Exposure_Volume'])
     retail_cost = retail_costs['Cost'].sum()
     ppa_cost = ppa.calc_by_row(scenario_row, price_profiles[price_id], residual_profiles)
-    print(scenario_row['Scenario_ID'])
+    #print(scenario_row['Scenario_ID'])
 
     return retail_cost, ppa_cost
