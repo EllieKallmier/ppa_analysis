@@ -10,7 +10,7 @@ import numpy as np
 # --> idea: add 'Hybrids' input: list of gen ids to hybridise w/ percentages and use Generator ID as the name for new hybrid.
 
 
-def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_set):
+def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_set, emissions_profiles):
     """
     Calculate retail and ppa costs for a given row in the scenario table
 
@@ -51,20 +51,15 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
     load_id = scenario_row['Load_ID']
     generator_id = scenario_row['Generator_ID']
     price_id = scenario_row['Wholesale_Price_ID']
-    #emissions_id = scenario_row['Emissions_Region_ID']
+    emissions_id = scenario_row['Emissions_Region_ID']
 
     load_profiles['DateTime'] = pd.to_datetime(load_profiles["DateTime"])#, format="%d/%m/%Y %H:%M")
     load_profiles[load_id] = pd.to_numeric(load_profiles[load_id])
     load_profiles[generator_id] = pd.to_numeric(load_profiles[generator_id])
+    load_profiles['Average Emissions Intensity'] = pd.to_numeric(emissions_profiles[emissions_id])
 
     price_profiles['DateTime'] = pd.to_datetime(price_profiles["DateTime"])
     price_profiles[price_id] = pd.to_numeric(price_profiles[price_id])
-
-#     emissions_profiles['DateTime'] = pd.to_datetime(emissions_profiles["DateTime"])
-#     emissions_profiles['Average Emissions Intensity'] = pd.to_numeric(emissions_profiles[emissions_id])
-
-#     # Merge the emissions_id col to load_profiles to send to residuals.py - needs to be tested
-#     load_profiles.merge(emissions_profiles[emissions_id], how='left')
 
     residual_profiles = residuals.calc(load_profiles=load_profiles, load_id=load_id, generator_id=generator_id)
     retail_costs = tariffs.calc_tou_set(tou_set=charge_set, load_profiles=residual_profiles, contract_type=scenario_row['PPA'],
