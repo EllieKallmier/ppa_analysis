@@ -20,14 +20,14 @@ def calc_tou_set(tou_set, load_profiles, contract_type, wholesale_volume):
 
     # Determine the volume profile that each charge applies to.
     if (contract_type in ['Off-site - Contract for Difference', 'Off-site - Physical Hedge'] and
-            wholesale_volume in ['All RE', 'RE Uptill Load']):                                          # you have an off-site hedge AND a retail agreement for firming
+            wholesale_volume in ['All RE', 'RE Uptill Load']):                                # you have an off-site hedge AND a retail agreement for firming
         tou_set['Alt Load ID'] = np.where(tou_set['Charge Type'] == 'Energy', 'Black', 'Load')
     elif (contract_type in ['Off-site - Contract for Difference', 'Off-site - Physical Hedge'] and
-          wholesale_volume == 'All Load'):                                                              # you have an off-site hedge and NO retail agreement
+          wholesale_volume == 'All Load'):                                                    # you have an off-site hedge and NO retail agreement
         tou_set['Alt Load ID'] = np.where(tou_set['Charge Type'] == 'Energy', 'Empty', 'Load')
-    elif contract_type == 'Off-site - Tariff Pass Through':                                             # tariff pass-through is a type of retail agreement
+    elif contract_type == 'Off-site - Tariff Pass Through':                                   # tariff pass-through is a type of retail agreement
         tou_set['Alt Load ID'] = np.where(tou_set['Charge Type'] == 'Energy', 'Black', 'Load')
-    elif contract_type == 'On-site RE Generator':                                                       # you have an on-site generator and a retail agreement for firming
+    elif contract_type == 'On-site RE Generator':                                             # you have an on-site generator and a retail agreement for firming
         tou_set['Alt Load ID'] = 'Black'
     else:
         tou_set['Alt Load ID'] = 'Load'

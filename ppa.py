@@ -227,6 +227,7 @@ wholesale_sale_methods = {'Off-site - Physical Hedge': wholesale}
 
 def penalty_calc(generator_profile, period, yearly_target_volume, penalty_rate):
     yearly_target_volume = yearly_target_volume * 1000
+    payment = 0
     if period == 'Yearly':
         target = yearly_target_volume
         payment = np.maximum((target - np.sum(generator_profile['RE Generator'].sum())), 0) * penalty_rate
@@ -245,6 +246,7 @@ def penalty_calc(generator_profile, period, yearly_target_volume, penalty_rate):
 
 
 def lgc_cost_calc(volume_type, volume, price, residual_profiles):
+    cost = 0
     if volume_type == 'Frac RE':
         cost = residual_profiles['RE Generator'].sum() * volume * price
     elif volume_type == 'Frac Load':

@@ -70,8 +70,8 @@ plt.show()
 
 # 4. Calculate PPA costs
 ppa_costs = ppa.calc(contract_type='Off-site - Contract for Difference',
-                     ppa_volume='RE Uptill Load',  # In each 30 min interval the PPA volume is the lesser of generator
-                                                   # or load volume.
+                     ppa_volume='Pay As Consumed',  # In each 30 min interval the PPA volume is the lesser of generator
+                                                   # or load volume. You're paying for what you use ('consume')
                      contract_price=50.0,
                      wholesale_volume='RE Uptill Load',  # In each 30 min interval the volume bought from the wholesale
                                                          # market is less of generator or load volume.
