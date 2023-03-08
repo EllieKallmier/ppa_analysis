@@ -1,6 +1,7 @@
 import pandas as pd
 import residuals
 import tariffs
+import emissions
 import ppa
 import numpy as np
  
@@ -66,6 +67,6 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
                                         wholesale_volume=scenario_row['Wholesale_Exposure_Volume'])
     retail_cost = retail_costs['Cost'].sum()
     ppa_cost = ppa.calc_by_row(scenario_row, price_profiles[price_id], residual_profiles)
-    #print(scenario_row['Scenario_ID'])
+    firming_emissions = emissions.firming_emissions_calc(residual_profiles)
 
-    return retail_cost, ppa_cost
+    return retail_cost, ppa_cost, firming_emissions

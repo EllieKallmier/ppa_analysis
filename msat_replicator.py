@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import scenario_runner
-from get_emissions_intensity import get_emissions_intensity
+from emissions import get_emissions_intensity
 
 load_profiles = pd.read_csv('tests/data/sample_one_day_data.csv')
 price_profiles = pd.read_csv('tests/data/sample_price_set.csv')
@@ -15,7 +15,7 @@ emissions = get_emissions_intensity(
     period='30min'
     )
 
-scenarios['retail'], scenarios['ppa'] = \
+scenarios['retail'], scenarios['ppa'], scenarios['firming emissions']= \
     zip(*scenarios.apply(scenario_runner.run_scenario_from_row, axis=1, price_profiles=price_profiles,
                          load_profiles=load_profiles, charge_set=charge_set, emissions_profiles=emissions))
 scenarios.to_csv('tests/data/costs_year.csv')
