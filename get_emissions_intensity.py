@@ -10,7 +10,7 @@ def get_emissions_intensity(start, end, cache, regions, period):
                                              end_time = end, 
                                              cache = cache,
                                              filter_regions = regions,
-                                             by = period,
+                                             by = None,                         # don't aggregate using inbuilt NEMED functionality - can't do 30 min increments
                                              assume_energy_ramp=True,           # can set this to False for faster computation / less accuracy
                                              generation_sent_out=False          # currently NOT considering auxiliary load factors (from static tables)
                                              )
@@ -19,6 +19,10 @@ def get_emissions_intensity(start, end, cache, regions, period):
     emissions_df = pd.DataFrame()
     emissions_df['DateTime'] = pd.to_datetime(nemed_result['TimeEnding'])
     for region in regions:
-        emissions_df[region] = emissions_df[emissions_df['Region']==region]['Intensity_Index']
+        emissions_df[region] = nemed_result[nemed_result['Region']==region]['Intensity_Index']
+
+    # Make sure to resample for the given period:
+    if period != None:
+        emissions_df = emissions_df.set_index('DateTime').resample(period).mean()
 
     return emissions_df
