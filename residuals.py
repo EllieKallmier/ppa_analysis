@@ -20,5 +20,5 @@ def calc(load_profiles, load_id, generator_id):
     residual_profiles['Excess RE'] = np.maximum(residual_profiles['RE Generator'] - residual_profiles['Load'], 0)
     residual_profiles['Used RE'] = residual_profiles['RE Generator'] - residual_profiles['Excess RE']
     residual_profiles['Empty'] = 0
-    #residual_profiles['Average Emissions Intenisty'] = load_profiles['Emissions']   # update this
+    residual_profiles['Average Emissions Intensity'] = load_profiles['Average Emissions Intensity']   # update this
     return residual_profiles
