@@ -1,0 +1,4 @@
+﻿Scenario_ID,PPA,PPA_Volume,Wholesale_Exposure_Volume,PPA_Price,Excess_RE_Purchase_Price,Excess_RE_Sale_Price,LGC_Volume_Type,LGC_Purchase_Volume,LGC_Purchase_Price,Load_MLF,Load_DLF,Generator_MLF,Generator_DLF,Target_Period,Yearly_Target_MWh,Yearly_Short_Fall_Penalty_MWh,Yearly_LGC_target_LGC,Yearly_LGC_short_fall_penalty_LGC,Average_Wholesale_Price,Wholesale_Price_ID,Load_ID,Generator_ID,Emissions_Region_ID
+1,Off-site - Contract for Difference,Pay As Consumed,RE Uptill Load,75,85,65,RE Uptill Load,,20,1,1,1,1,,,,,,,QLD1,Load,Solar,QLD1
+2,Off-site - Contract for Difference,Pay As Consumed,RE Uptill Load,75,85,65,RE Uptill Load,,20,1,1,1,1,,,,,,,QLD1,Load,Wind,QLD1
+3,Off-site - Contract for Difference,Pay As Consumed,RE Uptill Load,75,85,65,RE Uptill Load,,20,1,1,1,1,,,,,,,QLD1,Load,Hybrid,QLD1
