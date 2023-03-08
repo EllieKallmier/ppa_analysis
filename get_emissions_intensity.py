@@ -24,5 +24,6 @@ def get_emissions_intensity(start, end, cache, regions, period):
     # Make sure to resample for the given period:
     if period != None:
         emissions_df = emissions_df.set_index('DateTime').resample(period).mean()
+        emissions_df = emissions_df.reset_index()
 
     return emissions_df
