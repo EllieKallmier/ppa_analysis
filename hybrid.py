@@ -42,6 +42,12 @@ def create_hybrid(profiles, gen_id_mix, mix_name):
 
 # -------------- SCALING CALC ---------------
 # Calculates a new generation profile scaled to a chosen proportion of load
+
+# TODO: add capacity to intake an array of scaling factors if the period is set (i.e for UNSW using different scaling for each month based on forecasting.)
+# TODO: add the option to flag whether the function is scaling based on LOAD or GEN
+# -> when user selects/specifies the PPA contract type (volume type) this should determine whether scaling is for load or gen. 
+
+
 """
 Parameters:
     - profiles
@@ -55,26 +61,24 @@ Parameters:
     - scaling_factor
         -> float, can be specified if scaling to a fraction/percentage of the 
             load rather than the total load. Default = 1.0
+    - scale_to
+        -> string, either 'total_load' or '<<GENERATOR_ID>>'. Determines whether to scale to a percentage 
+            of the total load or the total generation. ('total_load' can also be
+            any other load-reference name).
 
 Returns:
     - profiles
         -> same df as input with generator profiles scaled to the load by period 
             and scaling factor. 
 """
-def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor=1.0):
+def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor=1.0, scale_to='Load'):
     # return new df rather than editing existing one
     profiles = profiles.copy()
     
     if scaling_period == "Yearly":
-        # creates a new df with entries matching the sampling time:
-        # DateTime      total_load      gen_id      ...
-        # 2019          123456          112333      ...
-        # 2020          234567          223344      ...
-        # ...           ...             ...         ...
-        # each column entry is the sum of all data for that year.
-        scaling_df = profiles.groupby(profiles['DateTime'].dt.year).sum() 
+        period = 'Y'       # Python offset string meaning year end frequency sampling
 
-        # scale the total_load value by the scaling factor (if supplied)
+        scaling_df = profiles.groupby(profiles['DateTime'].dt.year).sum()
         scaling_df["total_load"] *= scaling_factor
         scale_by = 1
         
@@ -91,6 +95,7 @@ def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor
                 profiles.loc[(profiles.DateTime.dt.year==date), gen_id] = profiles[gen_id] * scale_by
 
     elif scaling_period == "Quarterly":
+        period = 'Q'        # Python offset string meaning quarter end frequency sampling
         scaling_df = profiles.groupby(profiles["DateTime"].dt.to_period('Q')).sum()
         scaling_df["total_load"] *= scaling_factor
         for date in scaling_df.index:
@@ -103,6 +108,7 @@ def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor
             
 
     elif scaling_period == "Monthly":
+        period = 'M'        # Python offset string meaning month end frequency sampling
         scaling_df = profiles.groupby(profiles["DateTime"].dt.to_period('m')).sum()
         scaling_df["total_load"] *= scaling_factor
         for date in scaling_df.index:
@@ -119,4 +125,28 @@ def scale_gen_profile(profiles, gen_ids, scaling_period="Yearly", scaling_factor
         # whether we throw an error or take the whole dataset with no re-sampling.
         return 0
     
+    return profiles
+
+
+def scaling(profile_set, scaling_factor, gen_ids, period, scale_to):
+    profiles = profile_set.copy()
+    scaling_df = profiles.groupby(profiles["DateTime"].dt.to_period(period)).sum()
+    # Above line creates a new df with entries matching the sampling time:
+        # DateTime      total_load      gen_id      ...
+        # 2019          123456          112333      ...
+        # 2020          234567          223344      ...
+        # ...           ...             ...         ...
+        # each column entry is the sum of all data for that year.   
+
+    scaling_df[scale_to] *= scaling_factor
+    # scale the total_load value by the scaling factor (if supplied)
+
+    for date in scaling_df.index:
+        for gen_id in gen_ids:
+            if scaling_df.loc[date, "total_load"] <= scaling_df.loc[date, gen_id]:
+                scale_by = np.where(scaling_df.loc[date, gen_id] == 0 ,0, \
+                    scaling_df.loc[date, "total_load"]/scaling_df.loc[date, gen_id])
+
+            profiles.loc[(profiles.DateTime.dt.to_period(period)==date), gen_id] = profiles[gen_id] * scale_by
+
     return profiles
