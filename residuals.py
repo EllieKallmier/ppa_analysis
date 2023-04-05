@@ -20,5 +20,7 @@ def calc(load_profiles, load_id, generator_id):
     residual_profiles['Excess RE'] = np.maximum(residual_profiles['RE Generator'] - residual_profiles['Load'], 0)
     residual_profiles['Used RE'] = residual_profiles['RE Generator'] - residual_profiles['Excess RE']
     residual_profiles['Empty'] = 0
-    residual_profiles['Average Emissions Intensity'] = load_profiles['Average Emissions Intensity']  
+    residual_profiles['Average Emissions Intensity'] = load_profiles['Average Emissions Intensity']
+    residual_profiles['Firming Emissions'] = (residual_profiles['Black']/1000) * residual_profiles['Average Emissions Intensity']
+    # AEI given as tCO2-e/MWh -> need to divide Black energy by 1000 as all in kWh.
     return residual_profiles
