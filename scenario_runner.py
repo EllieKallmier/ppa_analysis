@@ -39,12 +39,12 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
       'Average_Wholesale_Price',
       'Wholesale_Price_ID',
       'Load_ID', 
-      'Generator_ID',    ---> gen_id should hold a list?
+      'Generator_ID_1',    ---> can keep adding more of these for each generator you want to hybridise
       'Emissions_Region_ID', 
       'Scaling_Period',
       'Scaling_Factor',
       'Scale_to_ID',
-      'Hybrid_Profiles',
+      'Hybrid_Percent_1',  ---> same as above: add more for each generator you want to hybridise
       'Hybrid_Mix_Name', 
       'TOU_1', 'TOU_2', 'TOU_3', 'TOU_4', 'TOU_5', 'TOU_6', 'TOU_7', 'TOU_8', 'TOU_9', 'TOU_10',
       'Flat_1', 'Flat_2', 'Flat_3', 'Flat_4', 'Flat_5', 'Flat_6', 'Flat_7', 'Flat_8'
@@ -55,36 +55,45 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    :return: retail_cost, ppa_cost: float
    """
 
+   # Get all the necessary data in more useful forms:
    load_id = scenario_row['Load_ID']
-   generator_id = scenario_row['Generator_ID']
+   generator_id_list = [scenario_row[col] for col in scenario_row.index if ('Generator_ID' in col) & (scenario_row[col] != None)]
    price_id = scenario_row['Wholesale_Price_ID']
    emissions_id = scenario_row['Emissions_Region_ID']
    scaling_period = scenario_row['Scaling_Period']
-   scaling_factors = scenario_row['Scaling_Factor']
+   scaling_factors = [scenario_row['Scaling_Factor']]
    scale_to_id = scenario_row['Scale_to_ID']
-   hybrids = scenario_row['Hybrid_Profiles']
-   hybrid_name = scenario_row['Hybrid_Mix_Names']
+   hybrid_percent_list = [scenario_row[col] for col in scenario_row.index if ('Hybrid_Percent' in col) & (scenario_row[col] != None)]
+   hybrid_name = scenario_row['Hybrid_Mix_Name']
+   hybrid_name = scenario_row['Hybrid_Mix_Name']
 
-   load_profiles['DateTime'] = pd.to_datetime(load_profiles["DateTime"])#, format="%d/%m/%Y %H:%M")
+   # Set the gen_id to the hybrid name OR to the first element in the gen id list:
+   generator_id = ""
+   if len(generator_id_list) > 1:
+      generator_id = hybrid_name
+   else:
+      generator_id = generator_id_list[0]
+
+   load_profiles['DateTime'] = pd.to_datetime(load_profiles["DateTime"])
    load_profiles[load_id] = pd.to_numeric(load_profiles[load_id])
 
-   ppa_contract_volume = scenario_row['PPA'] 
-
-   load_profiles[generator_id] = pd.to_numeric(load_profiles[generator_id])
+   ppa_contract_volume = scenario_row['PPA']
+   load_profiles[generator_id_list] = load_profiles[generator_id_list].apply(pd.to_numeric, errors='coerce')
    load_profiles['Average Emissions Intensity'] = pd.to_numeric(emissions_profiles[emissions_id])
-
+   
    # Add in the scaling function here - scaling has to come before hybrid function
-   load_profiles = hybrid.scale_gen_profile(load_profiles, generator_id, ppa_contract_volume, load_id, scaling_period=scaling_period, scaling_factor=scaling_factors, scale_to_id=scale_to_id)
+   load_profiles = hybrid.scale_gen_profile(load_profiles, generator_id_list, ppa_contract_volume, load_id, scaling_period=scaling_period, scaling_factor=scaling_factors, scale_to_id=scale_to_id)
 
    # Add hybrid function here if flagged
    # TODO: make this more robust.
-   if hybrids != None:
+   if len(hybrid_percent_list) > 1:
+      for percent in hybrid_percent_list:
+         percent = float(percent)
+      hybrids = list(zip(generator_id_list, hybrid_percent_list))
       load_profiles = hybrid.create_hybrid(load_profiles, hybrids, hybrid_name)
 
    price_profiles['DateTime'] = pd.to_datetime(price_profiles['DateTime'])
    price_profiles[price_id] = pd.to_numeric(price_profiles[price_id])
-
-
    residual_profiles = residuals.calc(load_profiles=load_profiles, load_id=load_id, generator_id=generator_id)
    retail_costs = tariffs.calc_tou_set(tou_set=charge_set, load_profiles=residual_profiles, contract_type=ppa_contract_volume, wholesale_volume=scenario_row['Wholesale_Exposure_Volume'])
    retail_cost = retail_costs['Cost'].sum()
@@ -92,17 +101,24 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    firming_emissions = emissions.firming_emissions_calc(residual_profiles)
 
    # TODO: add plotting capability here?
-   # Consider what to pass: either gen_id or hybrid_name to plot profile of
+   # Consider what to pass: either gen_id or hybrid_name to plot profile for
    # If a hybrid has been made, assume this is what to use?
 
    return retail_cost, ppa_cost, firming_emissions
 
 
-def plot_avg_week(residuals, price_profiles, ):
+def plot_avg_week(id_to_plot, residuals, price_profiles):
+
+   # TODO: Plot: Line chart w/ two y axes. One shows energy (kWh) produced/consumed
+   # and the other showing avg. wholesale prices in $/MWh
+
 
    return
 
 
-def plot_avg_week_emissions():
+def plot_avg_week_emissions(residuals):
+
+   # TODO: Plot showing an average week of emissions due to firming
+   # * and net emissions?
 
    return
