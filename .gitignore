@@ -4,4 +4,5 @@ getting_data/gen_data_cache
 getting_data/pricing_cache
 all_nsw_generators.csv
 **/tests
+*modelling
 __pycache__
