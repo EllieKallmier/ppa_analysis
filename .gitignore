@@ -6,4 +6,5 @@ all_nsw_generators.csv
 **/tests
 **/data
 *modelling.ipynb
+*.DS_Store
 __pycache__
