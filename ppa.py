@@ -55,7 +55,7 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
     :param ppa_volume: string, determines how the volume traded through the PPA is calculated on a 30 min basis,
                       should be one of 'Pay As Consumed', 'Pay As Produced', 'Shaped'
     :param wholesale_volume: string, determines how much volume is purchased at wholesale prices, should be one of
-                            'All RE', 'RE Uptill Load', 'All Load' or 'None'
+                            'All RE', 'RE Uptill Load', 'All Load' or 'None' - here is where the firming exposure cap comes in??
     :param contract_price: float, price paid for ppa volume
     :param excess_buy_price: float, price paid for excess re, only applies under 'On-site RE Generator'
     :param excess_sell_price: float, price excess sold at, only applies when wholesale exposure volume exceeds ppa volume
@@ -183,7 +183,11 @@ def flat_rate_onsite_calc(ppa_volume_profile, price_profile, contract_price, mlf
     cost = np.sum(contract_price * ppa_volume_profile/1000)
     return cost
 
-
+# TODO: add collar function here? Check about MLF and DLF
+def collar_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor, cap):
+    price_profile = price_profile.clip(lower=floor, upper=cap).copy() # TODO: make this dynamic
+    cost = np.sum(price_profile * ppa_volume_profile/1000 * mlf * dlf)
+    return cost
 
 ppa_methods = {'Off-site - Contract for Difference': cfd_calc,
                'Off-site - Tariff Pass Through': flat_rate_calc,
