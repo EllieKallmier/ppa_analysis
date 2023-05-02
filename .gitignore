@@ -1,10 +1,7 @@
-unsw_modelling.ipynb
 cache_nemed
 getting_data/gen_data_cache
 getting_data/pricing_cache
 all_nsw_generators.csv
-**/tests
-**/data
 *modelling.ipynb
 *.DS_Store
 __pycache__
