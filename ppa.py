@@ -168,9 +168,10 @@ def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles)
 
 # Note: added a factor to convert manually to MWh, as all input load profiles are in kWh
 # Could update this to include an input flag to signal kWh/MWh input from user
+# TODO: make zero floor pricing / pricing caps an adjustable feature of these functions (hard-coded atm)
 
 def cfd_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
-    cost = np.sum((contract_price - price_profile) * ppa_volume_profile/1000)
+    cost = np.sum((contract_price - np.maximum(price_profile, 0)) * ppa_volume_profile/1000)
     return cost
 
 
@@ -183,11 +184,6 @@ def flat_rate_onsite_calc(ppa_volume_profile, price_profile, contract_price, mlf
     cost = np.sum(contract_price * ppa_volume_profile/1000)
     return cost
 
-# TODO: add collar function here? Check about MLF and DLF
-def collar_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor, cap):
-    price_profile = price_profile.clip(lower=floor, upper=cap).copy() # TODO: make this dynamic
-    cost = np.sum(price_profile * ppa_volume_profile/1000 * mlf * dlf)
-    return cost
 
 ppa_methods = {'Off-site - Contract for Difference': cfd_calc,
                'Off-site - Tariff Pass Through': flat_rate_calc,
@@ -195,8 +191,6 @@ ppa_methods = {'Off-site - Contract for Difference': cfd_calc,
 
 
 # Excess purchasing calc functions
-
-
 def excess_purchase_calc(excess_profile, excess_purchase_price):
     cost = np.sum(excess_purchase_price * excess_profile)
     return cost
@@ -206,16 +200,12 @@ excess_methods = {'On-site RE Generator': excess_purchase_calc}
 
 
 # Excess sale calc functions
-
-
 def excess_sale_calc(excess_sale_profile, excess_sale_price):
     cost = np.sum(excess_sale_profile * excess_sale_price)
     return cost
 
 
 # Wholesale purchasing calc functions
-
-
 def wholesale(wholesale_volume_profile, price_profile, mlf, dlf):
     cost = np.sum(wholesale_volume_profile/1000 * price_profile * mlf * dlf)
     return cost
@@ -227,8 +217,6 @@ wholesale_sale_methods = {'Off-site - Physical Hedge': wholesale}
 
 
 # Penalty payment calculations
-
-
 def penalty_calc(generator_profile, period, yearly_target_volume, penalty_rate):
     yearly_target_volume = yearly_target_volume * 1000
     payment = 0
@@ -247,8 +235,6 @@ def penalty_calc(generator_profile, period, yearly_target_volume, penalty_rate):
 
 
 # LGC Purchase calculations
-
-
 def lgc_cost_calc(volume_type, volume, price, residual_profiles):
     cost = 0
     if volume_type == 'Frac RE':
