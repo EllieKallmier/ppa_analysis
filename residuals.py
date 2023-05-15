@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+# TODO: consider changing 'Used RE' to 'Matched RE' (more accurate)s
 
 def calc(load_profiles, load_id, generator_id):
     """
