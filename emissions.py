@@ -28,10 +28,10 @@ def get_emissions_intensity(start, end, cache, regions, period):
 
     return emissions_df
 
-
-def firming_emissions_calc(residual_profiles):
-    temp = residual_profiles.copy()
-    # Avg. emissions intensity given as tCO2-e/MWh - need to /1000 as firming energy given in kWh
-    temp['Emissions'] = (temp['Black']/1000) * temp['Average Emissions Intensity']
-    firming_emissions = np.sum(temp['Emissions'])
-    return firming_emissions
+# TODO: can remove this as it's now included in the residuals file
+# def firming_emissions_calc(residual_profiles):
+#     temp = residual_profiles.copy()
+#     # Avg. emissions intensity given as tCO2-e/MWh - need to /1000 as firming energy given in kWh
+#     temp['Emissions'] = (temp['Black']/1000) * temp['Average Emissions Intensity']
+#     firming_emissions = np.sum(temp['Emissions'])
+#     return firming_emissions
