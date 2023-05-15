@@ -98,9 +98,12 @@ def tou_calc(volume_type, charge_type, rate, mlf, dlf, start_month, end_month, s
             cost = energy_in_mwh * rate * dlf
 
     elif volume_type == "Fixed ($/day)":
-        cost = (len(load_profiles[pd.notna(load_profiles[load_id])])/48) * rate
+        # TODO: account for different time stamps here (30min, 5min etc)
+        num_timestamps = 288    # for 5 min intervals
+        cost = (len(load_profiles[pd.notna(load_profiles[load_id])])/num_timestamps) * rate
 
     elif volume_type == "Max Demand ($/MVA/day)":
-        cost = load_profiles[load_id].max() * 2 * (len(load_profiles[pd.notna(load_profiles[load_id])])/48) * rate/1000
+        num_timestamps = 48     # for 30min intervals
+        cost = load_profiles[load_id].max() * 2 * (len(load_profiles[pd.notna(load_profiles[load_id])])/num_timestamps) * rate/1000
 
     return cost
