@@ -4,3 +4,4 @@ env
 cache_nemed
 __pycache__
 .ipynb_checkpoints
+CACHE
