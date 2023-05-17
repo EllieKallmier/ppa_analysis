@@ -17,6 +17,7 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
       'PPA_Volume',
       'Wholesale_Exposure_Volume',
       'PPA_Price', 
+      'Floor_Price',
       'Excess_RE_Purchase_Price',
       'Excess_RE_Sale_Price', 
       'LGC_Volume_Type', 
@@ -61,6 +62,7 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    hybrid_percent_list = [scenario_row[col] for col in scenario_row.index if ('Hybrid_Percent' in col) & (scenario_row[col] != None)]
    hybrid_name = scenario_row['Hybrid_Mix_Name']
    hybrid_name = scenario_row['Hybrid_Mix_Name']
+   floor_price = scenario_row['Floor_Price']
 
    # Set the gen_id to the hybrid name OR to the first element in the gen id list:
    generator_id = ""

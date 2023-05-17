@@ -38,7 +38,7 @@ def calc_by_row(row, price_profile, residual_profiles):
     return cost
 
  
-def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale_volume=None,
+def calc(contract_type, ppa_volume, contract_price, residual_profiles, floor_price=None, wholesale_volume=None,
          excess_buy_price=None, excess_sell_price=None,
          lgc_volume_type=None, lgc_volume=None, lgc_price=None, load_mlf=1.0, load_dlf=1.0, gen_mlf=1.0, gen_dlf=1.0,
          penalty_period=None, yearly_target_volume_mwh=None, penalty_rate_mwh=None,
@@ -57,6 +57,7 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
     :param wholesale_volume: string, determines how much volume is purchased at wholesale prices, should be one of
                             'All RE', 'RE Uptill Load', 'All Load' or 'None' - here is where the firming exposure cap comes in??
     :param contract_price: float, price paid for ppa volume
+    :param floor_price: float, floor price applied to PPA contract. Default None.
     :param excess_buy_price: float, price paid for excess re, only applies under 'On-site RE Generator'
     :param excess_sell_price: float, price excess sold at, only applies when wholesale exposure volume exceeds ppa volume
                              or when the contract type is 'On-site RE Generator'
@@ -78,7 +79,7 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, wholesale
 
     if contract_type in ppa_methods:
         ppa_cost = ppa_methods[contract_type](ppa_volume_profile, scaled_price_profile, contract_price, load_mlf,
-                                              load_dlf)
+                                              load_dlf, floor_price)
     else:
         ppa_cost = 0.0
 
@@ -170,17 +171,20 @@ def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles)
 # Could update this to include an input flag to signal kWh/MWh input from user
 # TODO: make zero floor pricing / pricing caps an adjustable feature of these functions (hard-coded atm)
 
-def cfd_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
-    cost = np.sum((contract_price - np.maximum(price_profile, 0)) * ppa_volume_profile/1000)
+def cfd_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor):
+    if floor != None:
+        cost = np.sum((contract_price - np.maximum(price_profile, floor)) * ppa_volume_profile/1000)
+    else:
+        cost = np.sum((contract_price - price_profile) * ppa_volume_profile/1000)
     return cost
 
 
-def flat_rate_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
+def flat_rate_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor):
     cost = np.sum(contract_price * ppa_volume_profile/1000 * mlf * dlf)
     return cost
 
 
-def flat_rate_onsite_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf):
+def flat_rate_onsite_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor):
     cost = np.sum(contract_price * ppa_volume_profile/1000)
     return cost
 
