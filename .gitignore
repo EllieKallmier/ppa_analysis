@@ -1,7 +1,6 @@
-cache_nemed
-getting_data/gen_data_cache
-getting_data/pricing_cache
-all_nsw_generators.csv
+env
+*_cache/
 *modelling.ipynb
-*.DS_Store
+cache_nemed
 __pycache__
+.ipynb_checkpoints
