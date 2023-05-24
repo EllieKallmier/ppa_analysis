@@ -16,6 +16,7 @@ def calc_by_row(row, price_profile, residual_profiles):
         ppa_volume=row['PPA_Volume'], 
         wholesale_volume=row['Wholesale_Exposure_Volume'],
         contract_price=row['PPA_Price'], 
+        floor_price=row['Floor_Price'],
         excess_buy_price=row['Excess_RE_Purchase_Price'],
         excess_sell_price=row['Excess_RE_Sale_Price'], 
         lgc_volume_type=row['LGC_Volume_Type'],
@@ -42,7 +43,7 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, floor_pri
          excess_buy_price=None, excess_sell_price=None,
          lgc_volume_type=None, lgc_volume=None, lgc_price=None, load_mlf=1.0, load_dlf=1.0, gen_mlf=1.0, gen_dlf=1.0,
          penalty_period=None, yearly_target_volume_mwh=None, penalty_rate_mwh=None,
-         yearly_target_volume_lgc=None, penalty_rate_lgc=None, average_wholesale_price=None, price_profile=None ):
+         yearly_target_volume_lgc=None, penalty_rate_lgc=None, average_wholesale_price=None, price_profile=None, wholesale_price_id=None):
     """
     Calculate the PPA costs by using the contract type to select the correct calculation method.
 
@@ -62,9 +63,15 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, floor_pri
     :param excess_sell_price: float, price excess sold at, only applies when wholesale exposure volume exceeds ppa volume
                              or when the contract type is 'On-site RE Generator'
     :param price_profile: pandas dataframe, the set of possible wholesale price profiles
+    :param wholesale_price_id: str, to choose the price trace for use if multiple traces are passed (default None)
     :param residual_profiles: pandas dataframe, the set of residual volume profiles
     :return: float
     """
+    # If an id is passed (multiple pricing traces are passed to the function), select
+    # the relevant trace here. Have to add 'DateTime' as it's not an index (can't be
+    # an index for calling residuals).
+    if wholesale_price_id is not None:
+        price_profile = price_profile[['DateTime', wholesale_price_id]]
 
     if average_wholesale_price is not None:
         scaled_price_profile = price_profile * (average_wholesale_price / np.mean(price_profile))
@@ -129,8 +136,6 @@ def calc(contract_type, ppa_volume, contract_price, residual_profiles, floor_pri
 
 
 def calc_ppa_volume_profile(ppa_volume, residual_profiles, contract_type):
-    # TODO: consider how scaled and/or hybrid profiles created in-tool will be 
-    # handled by this function.
     if ppa_volume == 'Pay As Consumed' or contract_type == 'On-site RE Generator':
         volume_profile = residual_profiles['Used RE']
     else:
@@ -167,25 +172,25 @@ def calc_excess_that_could_be_sold(contract_type, ppa_volume, residual_profiles)
 
 # PPA calc functions
 
-# Note: added a factor to convert manually to MWh, as all input load profiles are in kWh
+# Note: removed conversion factor and added it to residuals calc function.
 # Could update this to include an input flag to signal kWh/MWh input from user
-# TODO: make zero floor pricing / pricing caps an adjustable feature of these functions (hard-coded atm)
+# TODO: make pricing caps an adjustable feature of these functions? Collars?
 
 def cfd_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor):
     if floor != None:
-        cost = np.sum((contract_price - np.maximum(price_profile, floor)) * ppa_volume_profile/1000)
+        cost = np.sum((contract_price - np.maximum(price_profile, floor)) * ppa_volume_profile)
     else:
-        cost = np.sum((contract_price - price_profile) * ppa_volume_profile/1000)
+        cost = np.sum((contract_price - price_profile) * ppa_volume_profile)
     return cost
 
 
 def flat_rate_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor):
-    cost = np.sum(contract_price * ppa_volume_profile/1000 * mlf * dlf)
+    cost = np.sum(contract_price * ppa_volume_profile * mlf * dlf)
     return cost
 
 
 def flat_rate_onsite_calc(ppa_volume_profile, price_profile, contract_price, mlf, dlf, floor):
-    cost = np.sum(contract_price * ppa_volume_profile/1000)
+    cost = np.sum(contract_price * ppa_volume_profile)
     return cost
 
 
@@ -211,7 +216,7 @@ def excess_sale_calc(excess_sale_profile, excess_sale_price):
 
 # Wholesale purchasing calc functions
 def wholesale(wholesale_volume_profile, price_profile, mlf, dlf):
-    cost = np.sum(wholesale_volume_profile/1000 * price_profile * mlf * dlf)
+    cost = np.sum(wholesale_volume_profile * price_profile * mlf * dlf)
     return cost
 
 
@@ -222,7 +227,7 @@ wholesale_sale_methods = {'Off-site - Physical Hedge': wholesale}
 
 # Penalty payment calculations
 def penalty_calc(generator_profile, period, yearly_target_volume, penalty_rate):
-    yearly_target_volume = yearly_target_volume * 1000
+    # yearly_target_volume = yearly_target_volume
     payment = 0
     if period == 'Yearly':
         target = yearly_target_volume
