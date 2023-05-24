@@ -50,8 +50,8 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    :param charge_set: The set of retail charge details
    :return: retail_cost, ppa_cost: float
    """
+   # TODO: add input type and value validation
 
-   # Get all the necessary data in more useful forms:
    load_id = scenario_row['Load_ID']
    generator_id_list = [scenario_row[col] for col in scenario_row.index if ('Generator_ID' in col) & (scenario_row[col] != None)]
    price_id = scenario_row['Wholesale_Price_ID']
@@ -62,9 +62,9 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    hybrid_percent_list = [scenario_row[col] for col in scenario_row.index if ('Hybrid_Percent' in col) & (scenario_row[col] != None)]
    hybrid_name = scenario_row['Hybrid_Mix_Name']
    hybrid_name = scenario_row['Hybrid_Mix_Name']
-   floor_price = scenario_row['Floor_Price']
 
    # Set the gen_id to the hybrid name OR to the first element in the gen id list:
+   # TODO: consider adding a flag (make_hybrid = True/False)
    generator_id = ""
    if len(generator_id_list) > 1:
       generator_id = hybrid_name
@@ -78,11 +78,10 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    load_profiles[generator_id_list] = load_profiles[generator_id_list].apply(pd.to_numeric, errors='coerce')
    load_profiles['Average Emissions Intensity'] = pd.to_numeric(emissions_profiles[emissions_id])
    
-   # Add in the scaling function here - scaling has to come before hybrid function
+   # Get the scaled profile to use for this scenario:
    load_profiles = hybrid.scale_gen_profile(load_profiles, generator_id_list, ppa_contract_volume, load_id, scaling_period=scaling_period, scaling_factor=scaling_factors, scale_to_id=scale_to_id)
 
-   # Add hybrid function here if flagged
-   # TODO: make this more robust.
+   # TODO: make this more robust - maybe add flag as input or create flag column (as mentioned above)
    if len(hybrid_percent_list) > 1:
       for percent in hybrid_percent_list:
          percent = float(percent)
@@ -97,11 +96,12 @@ def run_scenario_from_row(scenario_row, price_profiles, load_profiles, charge_se
    ppa_cost = ppa.calc_by_row(scenario_row, price_profiles[price_id], residual_profiles)
    firming_emissions = np.sum(residual_profiles['Firming Emissions'])
 
-   # TODO: add plotting capability here?
-   # Consider what to pass: either gen_id or hybrid_name to plot profile for
-   # If a hybrid has been made, assume this is what to use?
+   # Return the percentage of load matched by each scenario:
+   matched_percent = (1 - (np.sum(residual_profiles['Black']) / np.sum(residual_profiles['Load']))) * 100
 
-   return retail_cost, ppa_cost, firming_emissions
+   # TODO: add plotting capability here? (Now considering creating new file for plotting)
+
+   return retail_cost, ppa_cost, firming_emissions, matched_percent
 
 
 def plot_avg_week(id_to_plot, residuals, price_profiles):
