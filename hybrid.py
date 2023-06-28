@@ -4,8 +4,7 @@ import residuals
 
 # TODO: add error checking
 
-
-# -------------- HYBRID CALC ---------------
+# -------------------------------- HYBRID CALC ---------------------------------
 # Helper function to create hybrid generation profiles from a given set of gen 
 # profiles.
 
@@ -42,7 +41,7 @@ def create_hybrid(profiles, gen_id_mix, mix_name):
 
 
 
-# -------------- SCALING CALC ---------------
+# ------------------------------- SCALING CALC ---------------------------------
 # Calculates a new generation profile scaled to a chosen proportion of load
 
 """
