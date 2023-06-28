@@ -24,7 +24,11 @@ def calc(load_profiles, load_id, generator_id):
     residual_profiles['Excess RE'] = np.maximum(residual_profiles['RE Generator'] - residual_profiles['Load'], 0)
     residual_profiles['Used RE'] = residual_profiles['RE Generator'] - residual_profiles['Excess RE']
     residual_profiles['Empty'] = 0
+
+    # TODO: add a check here for marginal or average emissions intensity: (for now assume both)
     residual_profiles['Average Emissions Intensity'] = load_profiles['Average Emissions Intensity']
-    residual_profiles['Firming Emissions'] = (residual_profiles['Black']) * residual_profiles['Average Emissions Intensity']
+    residual_profiles['Marginal Emissions Intensity'] = load_profiles['Marginal Emissions Intensity']
+    residual_profiles['Firming Emissions (AEI)'] = (residual_profiles['Black']) * residual_profiles['Average Emissions Intensity']
+    residual_profiles['Firming Emissions (MEI)'] = (residual_profiles['Black']) * residual_profiles['Marginal Emissions Intensity']
 
     return residual_profiles
