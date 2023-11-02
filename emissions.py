@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from datetime import timedelta
+from datetime import timedelta, datetime
 import nemed
 
 # The following retrieval code is heavily based on examples given in the NEMED
@@ -13,7 +13,16 @@ import nemed
 # separate where possible and a third option to combine maximises speed and removes
 # the chance of making unnecessary calls to nemed.
 
+# TODO: add check for regions - make sure it's always passed a LIST.
+
 def get_avg_emissions_intensity(start, end, cache, regions, period=None):
+    # Clean datetime inputs to prevent error later:
+    if type(start) == str and type(end) == str:
+        if len(start) > 16:
+            start = start[:16]
+        if len(end) > 16:
+            end = end[:16]
+
     nemed_result = nemed.get_total_emissions(start_time = start,
                                              end_time = end, 
                                              cache = cache,
@@ -30,7 +39,7 @@ def get_avg_emissions_intensity(start, end, cache, regions, period=None):
     if regions == None:
         regions = ['NSW1', 'VIC1', 'SA1', 'QLD1', 'TAS1']
 
-    for region in regions:
+    for region in regions:                  
         emissions_df[region] = nemed_result[nemed_result['Region']==region]['Intensity_Index']
 
     # TODO: think about adding a check here for time stamps less than the default?
@@ -42,7 +51,7 @@ def get_avg_emissions_intensity(start, end, cache, regions, period=None):
 
     if period != None:
         
-        emissions_df = emissions_df.set_index('DateTime').resample(period).mean()
+        emissions_df = emissions_df.set_index('DateTime').resample(period).mean(numeric_only=True)
         emissions_df = emissions_df.reset_index()
 
     return emissions_df
@@ -76,10 +85,10 @@ def get_marginal_emissions_intensity(start, end, cache, regions, period=None):
 
 # Get both types of emissions and return as a combined df. 
 def get_both_emissions(start, end, cache, regions, period=None):
-    average_emissions = get_avg_emissions_intensity(start, end, cache, regions, period=None)
+    average_emissions = get_avg_emissions_intensity(start, end, cache, regions, period)
     average_emissions = average_emissions.rename(columns={col : col+'_average' for col in average_emissions.columns if col != 'DateTime'})
 
-    marginal_emissions = get_marginal_emissions_intensity(start, end, cache, regions, period=None)
+    marginal_emissions = get_marginal_emissions_intensity(start, end, cache, regions, period)
     marginal_emissions = marginal_emissions.rename(columns={col : col+'_marginal' for col in marginal_emissions.columns if col != 'DateTime'})
 
     emissions_df = average_emissions.merge(marginal_emissions, how='outer', on='DateTime')
