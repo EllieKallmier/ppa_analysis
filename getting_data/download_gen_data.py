@@ -5,8 +5,8 @@ from nemosis import dynamic_data_compiler
 import plotly.express as px
 
 # Set dates that you want the data between
-START_DATE = '2016/01/01 00:00:00'
-END_DATE = '2022/12/31 23:30:00'
+START_DATE = '2019/01/01 00:00:00'
+END_DATE = '2023/12/31 23:30:00'
 
 # Set up a cache or point this to your preferred cache:
 raw_data_cache = 'getting_data/gen_data_cache'
@@ -27,14 +27,19 @@ generators = [
     'PUMP2',"W/HOE#1","W/HOE#2",'WIVENSH','WOOLGSF1','YARANSF1'
 ]
 
-
+combined = pd.DataFrame()
 for duid in generators:
-    scada_data_gen = scada_data[scada_data['DUID'] == duid]
+    scada_data_gen = scada_data[scada_data['DUID'] == duid].copy().rename(columns={'SCADAVALUE' : duid})
+    scada_data_gen = scada_data_gen.drop(columns=['DUID'])
     scada_data_gen['ts'] = pd.to_datetime(scada_data_gen['SETTLEMENTDATE'])
     scada_data_gen = scada_data_gen.set_index('ts')
     scada_data_gen = scada_data_gen.sort_values(by='ts')
-    scada_data_gen = scada_data_gen.resample('30min').mean()
-    print(scada_data_gen.head())
+    scada_data_gen = scada_data_gen.resample('30min').mean(numeric_only=True)
+
+    if combined.empty:
+        combined = scada_data_gen.copy()
+    else:
+        combined = pd.concat([combined, scada_data_gen], axis='columns')
 
     # Export data for this generator to csv file.
-    scada_data_gen.to_csv(f'{duid}_generation_data.csv')
+combined.to_csv(f'QLD_generation_data.csv')

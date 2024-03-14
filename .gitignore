@@ -2,6 +2,7 @@ env
 *_cache/
 *modelling.ipynb
 *data.py
+*_data.csv
 cache_nemed
 __pycache__
 .ipynb_checkpoints

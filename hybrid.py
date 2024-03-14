@@ -1,3 +1,8 @@
+# CONTEXT NOTE:
+# This file should help supply the CONTRACTED generation profile to the rest
+# of the functions throughout the tool. 
+
+
 import pandas as pd
 import numpy as np
 import residuals
@@ -14,7 +19,7 @@ Parameters:
         -> pandas df containing DateTime column as half-hourly timestamp type 
            and all other columns with generator IDs as header.
     - gen_id_mix
-        -> list of tuples with 2 elements:
+        -> list of tuples with 2 elements: [('Wind', 0.5), ('SOlar', 0.5)]
             - [0] string, generator ID to hybridise together (must be found in 
                 column names in above)
             - [1] float, percentage of the generation mix this ID will provide. 

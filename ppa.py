@@ -34,7 +34,7 @@ def calc_by_row(row, price_profile, residual_profiles):
         average_wholesale_price=row['Average_Wholesale_Price'],
         price_profile=price_profile, 
         residual_profiles=residual_profiles
-)
+    )
     cost = sum(cost.values())
     return cost
 

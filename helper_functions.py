@@ -84,3 +84,8 @@ def _check_timestamps():
 # dynamically switch between 0-1 and 0-100 depending on inputs?)
 def _check_hybrid_percents():
     return
+
+
+# Check that regions called in msat_replicator exist in all necessary dfs:
+def check_regions():
+    return
