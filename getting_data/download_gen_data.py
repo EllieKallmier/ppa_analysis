@@ -1,45 +1,68 @@
 import pandas as pd
 import numpy as np
-from datetime import timedelta
-from nemosis import dynamic_data_compiler
-import plotly.express as px
+from datetime import timedelta, datetime
+from typing import List
+from nemosis import dynamic_data_compiler, static_table
+from helper_functions import _check_missing_data
 
-# Set dates that you want the data between
-START_DATE = '2019/01/01 00:00:00'
-END_DATE = '2023/12/31 23:30:00'
 
-# Set up a cache or point this to your preferred cache:
-raw_data_cache = 'getting_data/gen_data_cache'
-scada_data = dynamic_data_compiler(start_time=START_DATE,
-                                   end_time=END_DATE,
-                                   table_name='DISPATCH_UNIT_SCADA',
-                                   raw_data_location=raw_data_cache)
+# Fetch the generation data using NEMOSIS: this function acts as a wrapper that
+# filters for region and technology type, and checks the earliest data for each
+# matching generator against start date.
+def get_generation_data(
+        cache:str, 
+        region:str, 
+        technology_type_s:List[str],
+        sampling_interval_minutes:str,
+        start_date:pd.Timestamp,
+        end_date:pd.Timestamp
+        ) -> pd.DataFrame:
+    
+    # First: get the static table for generators and scheduled loads. This is used
+    # to filter for generators by region and type.
+    # Credit for example code snippets: https://github.com/UNSW-CEEM/NEMOSIS/blob/master/examples/generator_bidding_data.ipynb (Nick Gorman)
+    dispatch_units = static_table(table_name='Generators and Scheduled Loads', 
+                                raw_data_location=cache,
+                                update_static_file=True)
+    
+    # Get only relevant columns
+    dispatch_units = dispatch_units[['Station Name', 'Region', 'Technology Type - Descriptor', 'DUID']]
 
-# This list can be updated depending on the generator(s) you want data from. 
-# These generators are a mix of solar, wind and pumped hydro from QLD.
-generators = [
-    'BAKING1','BARCSF1','BARRON-1','BARRON-2','BLUEGSF1','CHILDSF1','CLARESF1','CLERMSF1',\
-    'COLUMSF1','CSPVPS1','COOPGWF1','COOPGWF1','COOPGWF1','COOPGWF1','DDSF1','DAYDSF1','DAYDSF2',\
-    'EDENVSF1','EMERASF1','GANGARR1','HAMISF1','HAUGHT11','HAYMSF1','HUGSF1','KABANWF1','KAREEYA1',\
-    'KAREEYA2','KAREEYA3','KAREEYA4','KAREEYA5','KEPSF1','KEPWF1','KSP1','LILYSF1','LRSF1',\
-    'MARYRSF1','MIDDLSF1','MEWF1','MEWF1','MOUSF1','OAKEY1SF','OAKEY2SF','RRSF1','RUGBYR1','SMCSF1',\
-    'SMCSF1','SRSF1','VALDORA1','WARWSF1','WARWSF2','WDGPH1','WDGPH1','WHITSF1','WHILL1','PUMP1',\
-    'PUMP2',"W/HOE#1","W/HOE#2",'WIVENSH','WOOLGSF1','YARANSF1'
-]
+    # Filter for region and technology type, then get a list of the unique remaining DUIDs
+    dispatch_units = dispatch_units[
+        (dispatch_units['Region'] == region) &
+        (dispatch_units['Technology Type - Descriptor'].str.upper().isin(technology_type_s))
+    ]
+    duids_to_check = dispatch_units['DUID'].values
 
-combined = pd.DataFrame()
-for duid in generators:
-    scada_data_gen = scada_data[scada_data['DUID'] == duid].copy().rename(columns={'SCADAVALUE' : duid})
-    scada_data_gen = scada_data_gen.drop(columns=['DUID'])
-    scada_data_gen['ts'] = pd.to_datetime(scada_data_gen['SETTLEMENTDATE'])
-    scada_data_gen = scada_data_gen.set_index('ts')
-    scada_data_gen = scada_data_gen.sort_values(by='ts')
-    scada_data_gen = scada_data_gen.resample('30min').mean(numeric_only=True)
+    # Need to convert start and end dates to strings and collect all scada data 
+    # from nemosis:
+    start_date_str = datetime.strftime(start_date, '%Y/%m/%d %H:%M:%S')
+    end_date_str = datetime.strftime(end_date, '%Y/%m/%d %H:%M:%S')
+    scada_data = dynamic_data_compiler(start_time=start_date_str,
+                                    end_time=end_date_str,
+                                    table_name='DISPATCH_UNIT_SCADA',
+                                    raw_data_location=cache)
+    
+    useable_scada_data = pd.DataFrame()
+    for duid in duids_to_check:
+        scada_data_gen = scada_data[scada_data['DUID'] == duid].copy()
+        tech_type = dispatch_units[dispatch_units['DUID'] == duid]['Technology Type - Descriptor'].values[0]
 
-    if combined.empty:
-        combined = scada_data_gen.copy()
-    else:
-        combined = pd.concat([combined, scada_data_gen], axis='columns')
+        scada_data_gen = scada_data.rename(columns={'SCADAVALUE' : duid + ': ' + tech_type})
+        scada_data_gen = scada_data_gen.drop(columns=['DUID'])
+        scada_data_gen['DateTime'] = pd.to_datetime(scada_data_gen['SETTLEMENTDATE'])
+        scada_data_gen = scada_data_gen.set_index('DateTime')
+        scada_data_gen = scada_data_gen.sort_values(by='DateTime')
+        scada_data_gen = scada_data_gen.resample(f'{sampling_interval_minutes}min').mean(numeric_only=True)
 
-    # Export data for this generator to csv file.
-combined.to_csv(f'QLD_generation_data.csv')
+        non_nan_scada = scada_data_gen.dropna(how='any', axis='rows').copy()
+        
+        if not non_nan_scada.empty:
+            if non_nan_scada.first_valid_index() <= start_date:
+                useable_scada_data = pd.concat([useable_scada_data, scada_data_gen], axis='columns')
+
+    gen_data = _check_missing_data(useable_scada_data)
+    gen_data = gen_data.clip(lower=0.0)
+
+    return gen_data
