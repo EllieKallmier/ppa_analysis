@@ -1,7 +1,7 @@
 import pandas as pd
 import residuals
 import tariffs
-import emissions
+import getting_data.import_emissions_data as import_emissions_data
 import hybrid
 import ppa
 import numpy as np

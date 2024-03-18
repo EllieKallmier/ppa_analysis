@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 import logging
-
+from datetime import timedelta, datetime
 
 # Helper function to check whether a float sits within bounds (inclusive)
 def check_float_between(x, lb=None, ub=None):
@@ -64,28 +64,32 @@ def _check_scenarios(scenario_row, dtypes):
 
     return
 
+# Test help functions:
+def _check_missing_data(df:pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        print('DataFrame is empty.\n')
+    
+    nan_df = df[df.isna()]
 
-# Check load/gen profiles: check datetime column w/ datetime type, check for NaN/
-# empty columns or rows. 
-def _check_load_gen_profiles():
-    return
+    if not nan_df.empty:
+        print('Some missing data found. Filled with zeros.\n')
+        df = df.fillna(0.0)
 
-# Check the dates from each set of profiles: emissions, load/gen etc
-def _check_dates():
-    return
+    return df
 
-# Check that the same/constant timestamps are used across all profiles (if not, 
-# resample and throw a message?)
-def _check_timestamps():
-    return
+# Returns an integer representing minutes in the interval
+def get_interval_length(df:pd.DataFrame) -> int:
+    # get the interval length for the first and last intervals - this will
+    # be checked throughout the whole dataset next
 
+    first_int = df['DateTime'].iloc[1] - df['DateTime'].iloc[0]
+    last_int = df['DateTime'].iloc[-1] - df['DateTime'].iloc[-2]
 
-# In hybrid.py - check that the percentages add to either 1 or 100 (may need to 
-# dynamically switch between 0-1 and 0-100 depending on inputs?)
-def _check_hybrid_percents():
-    return
+    if first_int == last_int:
+        return int(first_int.total_seconds() / 60)
+    else:
+        print('Interval lengths are different throughout dataset.\n')
+        return int(first_int.total_seconds() / 60)
 
-
-# Check that regions called in msat_replicator exist in all necessary dfs:
-def check_regions():
-    return
+def _check_interval_consistency(df:pd.DataFrame, mins:int) -> bool:
+    return (df['DateTime'].diff() == timedelta(minutes=mins)).iloc[1:].all()

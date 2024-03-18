@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import scenario_runner
-from emissions import get_emissions_intensity
+from getting_data.import_emissions_data import get_emissions_intensity
 
 
 # TODO: allow user input filenames and locations throughout this function: 
