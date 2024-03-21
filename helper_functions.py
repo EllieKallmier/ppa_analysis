@@ -93,3 +93,14 @@ def get_interval_length(df:pd.DataFrame) -> int:
 
 def _check_interval_consistency(df:pd.DataFrame, mins:int) -> bool:
     return (df['DateTime'].diff() == timedelta(minutes=mins)).iloc[1:].all()
+
+
+# Function to check whether a years' worth of data contain a leap year
+# If the first day + 365 days != same day (number in month) - it's a leap year
+def check_leap_year(
+        df:pd.DataFrame
+) -> bool:
+    day_one = df.index[0]
+    day_365 = day_one + timedelta(days=365)
+
+    return day_one.day != day_365.day
