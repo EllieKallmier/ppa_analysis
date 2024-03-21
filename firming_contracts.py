@@ -14,7 +14,10 @@ from datetime import datetime, time, timedelta
 # Total wholesale exposure:
 def total_wholesale_exposure(
         df:pd.DataFrame,
-        regions:list[str]
+        regions:list[str], 
+        upper_bound:float,
+        lower_bound:float,
+        tariff_details:dict[str:float]
 ) -> pd.DataFrame:
 
     for region in regions:
@@ -26,9 +29,10 @@ def total_wholesale_exposure(
 # Partial wholesale exposure:
 def part_wholesale_exposure(
         df:pd.DataFrame,
-        regions:list[str],
+        regions:list[str], 
         upper_bound:float,
-        lower_bound:float
+        lower_bound:float,
+        tariff_details:dict[str:float]
 ) -> pd.DataFrame:
 
     for region in regions:
@@ -39,7 +43,40 @@ def part_wholesale_exposure(
 
 
 # Retail tariff contract:
-def retail_tariff_contract():
+def retail_tariff_contract(
+        df:pd.DataFrame,
+        regions:list[str], 
+        upper_bound:float,
+        lower_bound:float,
+        tariff_details:dict[str:float]
+) -> pd.DataFrame:
     # TODO: integrate tariff tool and CEEM tariff API for large commercial tariffs??
 
-    return
+    return df
+
+
+# Function to choose which firming contract to apply:
+def choose_firming_type(
+        firming_type:str,
+        df:pd.DataFrame,
+        regions:list[str], 
+        upper_bound:float,
+        lower_bound:float,
+        tariff_details:dict[str:float]
+) -> pd.DataFrame:
+
+    valid_options = {'Wholesale exposed', 'Partially wholesale exposed', 'Retail'}
+    if firming_type not in valid_options:
+        raise ValueError(f'firming_type must be one of {valid_options}')
+
+    firming_price_traces = {
+        'Wholesale exposed' : total_wholesale_exposure,
+        'Partially wholesale exposed' : part_wholesale_exposure,
+        'Retail' : retail_tariff_contract
+    }
+
+    # TODO: consider how to dynamically collect inputs - or do they all just 
+    # take the same inputs but some are obsolete?
+    df = firming_price_traces[firming_type](df, regions, upper_bound, lower_bound, tariff_details)
+
+    return df.copy()
