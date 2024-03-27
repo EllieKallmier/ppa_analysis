@@ -104,3 +104,66 @@ def check_leap_year(
     day_365 = day_one + timedelta(days=365)
 
     return day_one.day != day_365.day
+
+
+# Helper function to create the "shaped" profile based on the defined period and 
+# percentile
+def get_percentile_profile(
+        period_str:str,
+        data:pd.DataFrame,
+        percentile:float
+) -> pd.DataFrame:
+    
+    if period_str == 'M':
+        percentile_profile_period = data.groupby(
+            [data.index.month.rename('Month'), 
+             data.index.hour.rename('Hour')]
+        ).quantile(percentile)
+
+    if period_str == 'Q':
+        percentile_profile_period = data.groupby(
+            [data.index.quarter.rename('Quarter'), 
+             data.index.hour.rename('Hour')]
+        ).quantile(percentile)
+
+    if period_str == 'Y':
+        percentile_profile_period = data.groupby(
+            data.index.hour.rename('Hour')
+        ).quantile(percentile)
+
+    return percentile_profile_period
+
+
+# Helper function to apply the shaped profile across the whole desired timeseries
+def concat_shaped_profiles(
+        period_str:str,             # define the re-shaping period (one of 'Y', 'M', 'Q')
+        shaped_data:pd.DataFrame,   # df containing the shaped 'percentile profile'
+        long_data:pd.DataFrame,     # df containing full datetime index: to apply shaped profiles across
+) -> pd.DataFrame:
+    
+    if period_str == 'M':
+        long_data['Month'] = long_data.DateTime.dt.month
+        long_data['Hour'] = long_data.DateTime.dt.hour
+
+        long_data = long_data.set_index(['Month', 'Hour'])
+        long_data = pd.concat([long_data , shaped_data], axis='columns')
+        long_data = long_data.reset_index().drop(columns=['Month', 'Hour'])
+
+    if period_str == 'Q':
+        long_data['Quarter'] = long_data.DateTime.dt.quarter
+        long_data['Hour'] = long_data.DateTime.dt.hour
+
+        long_data = long_data.set_index(['Quarter', 'Hour'])
+        long_data = pd.concat([long_data , shaped_data], axis='columns')
+        long_data = long_data.reset_index().drop(columns=['Quarter', 'Hour'])
+
+    if period_str == 'Y':
+        long_data['Hour'] = long_data.DateTime.dt.hour
+
+        long_data = long_data.set_index('Hour')
+        long_data = pd.concat([long_data , shaped_data], axis='columns')
+        long_data = long_data.reset_index().drop(columns=['Hour'])
+
+    long_data = long_data.set_index('DateTime')
+
+    return long_data.copy()
