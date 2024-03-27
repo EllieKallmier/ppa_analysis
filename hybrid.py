@@ -6,6 +6,7 @@
 import pandas as pd
 import numpy as np
 import residuals
+from mip import Model, xsum, minimize, CONTINUOUS, BINARY, conflict, OptimizationStatus
 
 # TODO: add error checking
 
@@ -155,3 +156,131 @@ def scaling(profile_set, scaling_factor, load_id, gen_ids, period, scale_to):
                 profiles.loc[(profiles.DateTime.dt.to_period(period)==date.to_period(period)), gen_id] = profiles[gen_id] * scale_by
 
     return profiles
+
+
+# ---------------------------- HYBRID OPTIMISATION -----------------------------
+
+# def run_hybrid_optimisation
+def run_hybrid_optimisation(
+        contracted_energy:pd.Series,
+        wholesale_prices:pd.Series,
+        generation_data:pd.DataFrame,
+        excess_penalty:float,
+        total_sum:float,
+        contract_type:str,
+        cfe_score_min:float=None,
+        upscale_factor:float=1.0
+) -> tuple[pd.Series, dict[str:dict[str:float]]]:
+
+    # TODO: consider if this return structure is actually best/fit for purpose here
+    gen_names = {}
+    gen_data_series = {}
+    wholesale_prices_vals = np.array(wholesale_prices.clip(lower=0.0).values)
+
+    market_cap = 16600  # market price cap value to use as oversupply penalty
+    for _, gen in enumerate(generation_data):
+        gen_data_series[str(_)] = generation_data[gen].copy()
+        gen_names[str(_)] = gen
+
+    # Create the optimisation model and set up constants/variables:
+    R = range(len(contracted_energy))       # how many time intervals in total
+    G = range(len(generation_data.columns))         # how many columns of generators
+
+    m = Model()
+    percent_of_generation = {}
+    # Add a 'percentage' variable for each generator
+    for g in G:
+        percent_of_generation[str(g)] = m.add_var(var_type=CONTINUOUS, lb=0.0, ub=1.0)
+
+    # Define each of the key variables, all continuous, including lb==0.0 for all.
+    excess = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
+    unmatched = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub = contracted_energy.max()) for r in R]
+    hybrid_gen_sum = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
+    oversupply_flip_var = m.add_var(var_type=CONTINUOUS, lb=0.0)
+
+    # add the objective: to minimise firming (unmatched) - add price here?? (Yes)
+    m.objective = minimize(xsum((unmatched[r] + unmatched[r]*wholesale_prices_vals[r] + excess[r]*excess_penalty) for r in R) + oversupply_flip_var*market_cap)
+
+    # Add to hybrid_gen_sum variable by adding together each generation trace by the percentage variable
+    for r in R:
+        m += hybrid_gen_sum[r] <= sum([gen_data_series[str(g)][r] * percent_of_generation[str(g)] for g in G])
+        m += hybrid_gen_sum[r] >= sum([gen_data_series[str(g)][r] * percent_of_generation[str(g)] for g in G])
+
+    for r in R:
+        m += unmatched[r] >= contracted_energy[r] - hybrid_gen_sum[r]
+        m += excess[r] >= hybrid_gen_sum[r] - contracted_energy[r]
+
+    # Add constraint to make sure the hybrid total is greater than or equal to
+    # the "total_sum" value - keeps assumption of 100% load met (not matched)
+    m += xsum(hybrid_gen_sum[r] for r in R) >= total_sum
+
+    # Set the oversupply variable: multiplid by market cap this disincentivises
+    # overcontracting unless specified directly.
+    m += oversupply_flip_var >= xsum(hybrid_gen_sum[r] for r in R) - total_sum
+
+    # Add constraint around CFE matching percent:
+    if contract_type == '24/7':
+        m += xsum(unmatched[r] for r in R) <= (1 - cfe_score_min) * total_sum
+
+    status = m.optimize()
+
+    hybrid_trace = pd.DataFrame(generation_data)
+    hybrid_trace['Hybrid'] = 0
+    
+    # If the optimisation is infeasible: try again with different constraints based
+    # on the contract type.
+    if status == OptimizationStatus.INFEASIBLE:
+        if contract_type == '24/7':
+            print('Infeasible problem under current constraints: trying again with no CFE limit.')
+            m.clear()
+            return run_hybrid_optimisation(contracted_energy, wholesale_prices, generation_data, excess_penalty, total_sum, 'Pay as Produced')
+        elif contract_type == 'Shaped':
+            print('Infeasible problem under current constraints: trying again with generation scaled up 10%.')
+            m.clear()
+            return run_hybrid_optimisation(contracted_energy, wholesale_prices, generation_data*(upscale_factor+0.1), excess_penalty, total_sum, 'Shaped', upscale_factor=(upscale_factor+0.1))
+        
+
+    # If the optimisation is solvable (and solved): create the new hybrid trace
+    # by multiplying out each gen trace by the percentage variable
+    if status == OptimizationStatus.OPTIMAL or status == OptimizationStatus.FEASIBLE:
+        for g in G:         
+            hybrid_trace['Hybrid'] += gen_data_series[str(g)] * percent_of_generation[str(g)].x
+
+        results = {}
+        for g in G:
+            name = gen_names[str(g)]
+            details = {
+                'Percent of generator output' : percent_of_generation[str(g)].x,
+                'Percent of hybrid trace' : round(
+                    sum(percent_of_generation[str(g)].x * gen_data_series[str(g)]) / sum(hybrid_trace['Hybrid']) * 100, 1)
+            }
+
+            results[name] = details
+
+        
+        # Add some checks to make sure optimisation is running correctly.
+        # Check here to see that the variables for 'unmatched' and 'excess' match
+        # the actual values (to see that the contraints are working as expected).
+        check_df = pd.DataFrame()
+        check_df['Contracted'] = contracted_energy.copy()
+        check_df['Hybrid Gen'] = hybrid_trace['Hybrid'].copy()
+
+        check_df['Unmatched'] = [unmatched[r].x for r in R]
+        check_df['Excess'] = [excess[r].x for r in R]
+
+        check_df['Real Unmatched'] = (check_df['Contracted'] - check_df['Hybrid Gen']).clip(lower=0.0)
+        check_df['Real Excess'] = (check_df['Hybrid Gen'] - check_df['Contracted']).clip(lower=0.0)
+
+        check_df['Check unmatched'] = (check_df['Real Unmatched'].round(2) == check_df['Unmatched'].round(2))
+        check_df['Check excess'] = (check_df['Real Excess'].round(2) == check_df['Excess'].round(2))
+
+        check_df = check_df[(check_df['Check unmatched'] == False) | (check_df['Check excess'] == False)].copy()
+
+        assert check_df.empty == True, "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
+
+        # clear the model at end of run so memory isn't overworked.
+        m.clear()
+
+        return hybrid_trace['Hybrid'], results, upscale_factor
+    
+
