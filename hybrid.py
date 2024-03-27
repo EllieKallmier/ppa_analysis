@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import residuals
 from mip import Model, xsum, minimize, CONTINUOUS, BINARY, conflict, OptimizationStatus
+from helper_functions import *
 
 # TODO: add error checking
 
@@ -284,3 +285,283 @@ def run_hybrid_optimisation(
         return hybrid_trace['Hybrid'], results, upscale_factor
     
 
+# DOING - NOT FINISHED YET
+def hybrid_shaped(
+        redef_period:str,
+        contracted_amount:float, 
+        df:pd.DataFrame,
+        generator_list:list[str],
+        interval:str,
+        percentile_val:float
+) -> pd.DataFrame:
+    
+    if contracted_amount < 0 or contracted_amount > 100:
+        raise ValueError('contracted_amount must be a float between 0 - 100')
+    
+    if percentile_val < 0 or percentile_val > 1.0:
+        raise ValueError('percentile_val must be a float between 0 - 1.0.')
+    
+    percentile_val = 1 - percentile_val
+
+    # also need to find out if it's a leap year:
+    leap_year = check_leap_year(df, 24)
+    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+
+    # Get the load and gen:
+    first_year_load = first_year['Load'].copy()
+    first_year_gen = first_year[generator_list].copy()
+
+    # sum of total load in first year:
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+
+    # Create a new df to hold the shaped (percentile) profiles, make sure timestamps
+    # all line up.
+    shaped_first_year = pd.DataFrame()
+    shaped_first_year['DateTime'] = pd.date_range(
+        first_year_load.index[0], 
+        first_year_load.index[-1], 
+        freq='H'
+    )
+
+    # TODO: add commenting detail here to explain what's going on!!
+    resampled_gen_data = get_percentile_profile(redef_period, first_year_gen, percentile_val)
+    shaped_first_year = concat_shaped_profiles(redef_period, resampled_gen_data, shaped_first_year)
+
+    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+        contracted_energy=first_year_load,
+        wholesale_prices=first_year['RRP: QLD1'].copy(),
+        generation_data=shaped_first_year.copy(),
+        excess_penalty=50,
+        total_sum=first_year_load_sum,
+        contract_type='Shaped'
+    )
+
+    hybrid_trace_whole_length = pd.DataFrame(columns=['DateTime'])
+    hybrid_trace_whole_length['DateTime'] = df.index.copy()
+
+    # Now add the hybrid P[x] profile to df as contracted energy
+    resampled_gen_data['Contracted Energy'] = 0
+    for name, det_dict in percentages.items():
+        if name != 'Hybrid':
+            contracted_percent_gen = det_dict['Percent of generator output']
+            resampled_gen_data['Contracted Energy'] += resampled_gen_data[name] * (contracted_percent_gen)
+    
+    contracted_gen_full_length = concat_shaped_profiles(redef_period, resampled_gen_data, hybrid_trace_whole_length)
+
+    contracted_gen_full_length *= (upscale_factor + 0.1)
+
+    df = pd.concat([df, contracted_gen_full_length['Contracted Energy']], axis='columns')
+
+    # Now add the 'actual' hybrid profile (each gen * allocated output %)
+    df['Hybrid'] = 0
+
+    for name, det_dict in percentages.items():
+        hybrid_percent_gen = det_dict['Percent of generator output']
+        df['Hybrid'] += df[name] * hybrid_percent_gen
+    return df
+
+def hybrid_baseload(
+        redef_period:str,
+        contracted_amount:float, 
+        df:pd.DataFrame,
+        generator_list:list[str],
+        interval:str,
+        percentile_val:float
+) -> pd.DataFrame:
+
+    if contracted_amount < 0:
+        raise ValueError('contracted_amount must be greater than 0.')
+    
+    # also need to find out if it's a leap year:
+    leap_year = check_leap_year(df, 24)
+    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+
+    # Resample to hourly load, then take the hourly average per chosen period
+    first_year_load = first_year['Load'].copy()
+
+    # Use a map to allocate hourly values across all years of load data:
+    if redef_period == 'Y':
+        avg_hourly_load = first_year_load.mean(numeric_only=True)
+
+        # the contracted energy needs to be updated by the contracted_amount percentage:
+        df['Contracted Energy'] = round(avg_hourly_load) * (contracted_amount / 100)
+    
+    else:
+        # the contracted energy needs to be updated by the contracted_amount percentage:
+        avg_hourly_load = pd.DataFrame(first_year_load.resample(redef_period).mean(numeric_only=True) * (contracted_amount / 100))
+        avg_hourly_load['Load'] = avg_hourly_load['Load'].round()
+        avg_hourly_load['M'] = avg_hourly_load.index.month
+        avg_hourly_load['Q'] = avg_hourly_load.index.quarter
+
+        map_dict = dict(zip(avg_hourly_load[redef_period], avg_hourly_load['Load']))
+
+        first_year['M'] = first_year.index.month
+        first_year['Q'] = first_year.index.quarter
+
+        first_year['Contracted Energy'] = first_year[redef_period].copy()
+        first_year['Contracted Energy'] = first_year['Contracted Energy'].map(map_dict)
+
+        first_year = first_year.drop(columns=['M', 'Q'])
+    
+    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+        contract_type='Baseload',
+        contracted_energy=first_year['Contracted Energy'].copy(),
+        wholesale_prices=first_year['RRP: QLD1'].copy(),
+        generation_data=first_year[generator_list].copy(),
+        excess_penalty=0.5,
+        total_sum=first_year_load.sum(numeric_only=True)
+    )
+
+    first_year = pd.concat([first_year, hybrid_trace_series], axis='columns')
+
+    df['Hybrid'] = 0
+
+    for name, det_dict in percentages.items():
+        hybrid_percent_gen = det_dict['Percent of generator output']
+        df['Hybrid'] += df[name] * hybrid_percent_gen
+
+    return df
+
+def hybrid_247(
+        redef_period:str,
+        contracted_amount:float, 
+        df:pd.DataFrame,
+        generator_list:list[str],
+        interval:str,
+        percentile_val:float
+) -> pd.DataFrame:
+
+    if contracted_amount < 0 or contracted_amount > 100:
+        raise ValueError('contracted_amount must be a float between 0-100')
+
+    # also need to find out if it's a leap year:
+    leap_year = check_leap_year(df, 24)
+    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+
+    # Get first year load (and total sum):
+    first_year_load = first_year['Load'].copy()
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+
+    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+        contracted_energy=first_year['Load'].copy(),
+        wholesale_prices=first_year['RRP: QLD1'].copy(),
+        generation_data=first_year[generator_list].copy(),
+        excess_penalty=0.5,
+        constrain_total_percent=False,
+        total_sum=first_year_load_sum,
+        contract_type='24/7',
+        cfe_score_min=contracted_amount/100
+    )
+
+    df['Hybrid'] = 0
+
+    for name, det_dict in percentages.items():
+        hybrid_percent_gen = det_dict['Percent of generator output']
+        df['Hybrid'] += df[name] * hybrid_percent_gen
+
+    return df
+
+def hybrid_pap(
+        redef_period:str,
+        contracted_amount:float, 
+        df:pd.DataFrame,
+        generator_list:list[str],
+        interval:str,
+        percentile_val:float
+) -> pd.DataFrame:
+
+    if contracted_amount < 0:
+        raise ValueError('contracted_amount must be greater than 0.')
+
+    # also need to find out if it's a leap year:
+    leap_year = check_leap_year(df, 24)
+    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+
+    # Get first year load (and total sum):
+    first_year_load = first_year['Load'].copy()
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+
+    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+        contracted_energy=first_year_load,
+        wholesale_prices=first_year['RRP: QLD1'].copy(),
+        generation_data=first_year[generator_list].copy(),
+        excess_penalty=1,     # note: need to add a small (even if negligable) penalty for excess - to enforce calculation of the 'excess' variable in optimisation.
+        total_sum=first_year_load_sum,
+        contract_type='Pay as Produced'
+    )
+
+    df['Hybrid'] = 0
+
+    for name, det_dict in percentages.items():
+        hybrid_percent_gen = det_dict['Percent of generator output']
+        df['Hybrid'] += df[name] * hybrid_percent_gen
+
+    return df
+
+def hybrid_pac(
+        redef_period:str,
+        contracted_amount:float, 
+        df:pd.DataFrame,
+        generator_list:list[str],
+        interval:str,
+        percentile_val:float
+) -> pd.DataFrame:
+
+    if contracted_amount < 0:
+        raise ValueError('contracted_amount must be greater than 0.')
+
+    # Use only the first year of data to create the hybrid/contracted energy trace
+    # also need to find out if it's a leap year:
+    leap_year = check_leap_year(df, 24)
+    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+
+    # Get first year load (and total sum):
+    first_year_load = first_year['Load'].copy()
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+
+    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+        contracted_energy=first_year['Load'].copy(),
+        wholesale_prices=first_year['RRP: QLD1'].copy(),
+        generation_data=first_year[generator_list].copy(),
+        excess_penalty=0.5,     # note: need to add a small (even if negligable) penalty for excess - to enforce calculation of the 'excess' variable in optimisation.
+        total_sum=first_year_load_sum,
+        contract_type='Pay as Consumed'
+    )
+
+    df['Hybrid'] = 0
+
+    for name, det_dict in percentages.items():
+        hybrid_percent_gen = det_dict['Percent of generator output']
+        df['Hybrid'] += df[name] * hybrid_percent_gen
+
+    return df
+
+def create_hybrid_generation(
+        contract_type:str, # describes contract delivery structure
+        redef_period:str, # one of python's offset strings indicating when the contract gets "redefined"
+        contracted_amount:float, # a number 0-100(+) indicating a percentage. Definition depends on contract type.
+        df:pd.DataFrame, # df containing Load, all gen profiles, prices, emissions.
+        generator_list:list[str],
+        interval:str, # time interval in minutes that data is currently in
+        percentile_val:float # for Shaped contracts only: to define the percentile of generation profiles to match.
+) -> pd.DataFrame:
+    
+    valid_contracts = {'Pay as Produced', 'Pay as Consumed', 'Shaped', 'Baseload', '24/7'}
+    if contract_type not in valid_contracts:
+        raise ValueError(f'contract_type must be one of {valid_contracts}')
+    
+    valid_periods = {'M', 'Q', 'Y'}
+    if redef_period not in valid_periods:
+        raise ValueError(f'redef_period must be one of {valid_periods}')
+
+    opt_hybrid_funcs = {
+        'Pay as Produced' : hybrid_pap, 
+        'Pay as Consumed' : hybrid_pac,
+        'Shaped' : hybrid_shaped, 
+        'Baseload' : hybrid_baseload, 
+        '24/7' : hybrid_247
+    }
+
+    df_with_hybrid = opt_hybrid_funcs[contract_type](redef_period, contracted_amount, df, generator_list, interval, percentile_val)
+
+    return df_with_hybrid
