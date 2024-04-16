@@ -81,6 +81,7 @@ def _check_missing_data(df:pd.DataFrame) -> pd.DataFrame:
 def get_interval_length(df:pd.DataFrame) -> int:
     # get the interval length for the first and last intervals - this will
     # be checked throughout the whole dataset next
+    df = df.copy().reset_index()
 
     first_int = df['DateTime'].iloc[1] - df['DateTime'].iloc[0]
     last_int = df['DateTime'].iloc[-1] - df['DateTime'].iloc[-2]
@@ -91,7 +92,8 @@ def get_interval_length(df:pd.DataFrame) -> int:
         print('Interval lengths are different throughout dataset.\n')
         return int(first_int.total_seconds() / 60)
 
-def _check_interval_consistency(df:pd.DataFrame, mins:int) -> bool:
+def _check_interval_consistency(df:pd.DataFrame, mins:int) -> tuple[bool, pd.Timestamp]:
+    df = df.copy().reset_index()
     return (df['DateTime'].diff() == timedelta(minutes=mins)).iloc[1:].all()
 
 
