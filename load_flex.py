@@ -37,9 +37,9 @@ def create_base_days(
     all_weekdays_only = load_profile[load_profile['Weekend'] == 0].copy()
     all_weekends_only = load_profile[load_profile['Weekend'] == 1].copy()
 
-    base_weekday = all_weekdays_only.groupby(all_weekdays_only.index.hour)['Load'].quantile(quant).reset_index(drop=True)
+    base_weekday = all_weekdays_only.groupby([all_weekdays_only.index.month.rename('Month'), all_weekdays_only.index.hour.rename('Hour')])['Load'].quantile(quant).reset_index(drop=True)
 
-    base_weekend = all_weekends_only.groupby(all_weekends_only.index.hour)['Load'].quantile(quant).reset_index(drop=True)
+    base_weekend = all_weekends_only.groupby([all_weekends_only.index.month.rename('Month'), all_weekends_only.index.hour.rename('Hour')])['Load'].quantile(quant).reset_index(drop=True)
     
     return base_weekday, base_weekend
 
@@ -65,9 +65,11 @@ def daily_load_shifting(
     for idx, date in enumerate(daily_load_sums.index):
         data_for_one_day = df[df.index.date == date.date()].copy()
         if data_for_one_day['Weekend'].values[0] == 0:
-            base_day = base_weekday.values
+            weekday_month = base_weekday[base_weekday.Month == date.month]
+            base_day = weekday_month.values
         else:
-            base_day = base_weekend.values
+            weekdend_month = base_weekend[base_weekend.Month == date.month]
+            base_day = weekdend_month.values
 
         data_for_one_day['Base Day'] = base_day
 
@@ -88,7 +90,7 @@ def daily_load_shifting(
         original_load = data_for_one_day['Load'].values
         base_load = data_for_one_day['Base Load'].values
         contracted_renewables = data_for_one_day['Contracted Energy'].values
-        firming_prices = data_for_one_day[f'Firming price: {load_region}'].clip(lower=0.0).values
+        wholesale_prices = data_for_one_day[f'RRP: {load_region}'].clip(lower=0.0).values
 
         if sum(data_for_one_day['Flexible load']) > 0:
             # Start setting up the model:
@@ -108,7 +110,7 @@ def daily_load_shifting(
             # and a penalty on raising the load above its original value (small, can be set to 0)
             m.objective = minimize(
                 xsum(
-                    (unmatched[i] + unmatched[i]*firming_prices[i]*price_weight + \
+                    (unmatched[i] + unmatched[i]*wholesale_prices[i]*price_weight + \
                      raised_load[i]*raise_price + ramp_up[i]*ramp_up_price - \
                         ramp_down[i]*ramp_down_price) for i in I
                 )
