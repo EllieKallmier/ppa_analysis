@@ -4,66 +4,6 @@ import numpy as np
 import logging
 from datetime import timedelta, datetime
 
-# Helper function to check whether a float sits within bounds (inclusive)
-def check_float_between(x, lb=None, ub=None):
-    if lb != None and ub != None:
-        return (x >= lb) & (x <= ub)
-    elif lb != None:
-        return x >= ub
-    elif ub != None:
-        return x <= lb
-    else:
-        return True
-
-# Define columns and dtypes to check against
-# TODO: implement check_float_between (somehow?) in necessary 'value' items:
-def get_scenario_dtypes():
-    dtype_dict = {
-        'Scenario_ID' : {'type' : int, 'value' : None}, 
-        'PPA' : {'type' : str, 'value' : ['Off-site - Contract for Difference', 'Off-site - Tariff Pass Through',
-                        'Off-site - Physical Hedge', 'On-site RE Generator', 'No PPA']},
-        'PPA_Volume' : {'type' : str, 'value' : ['Pay As Consumed', 'Pay As Produced', 'Shaped']},
-        'Wholesale_Exposure_Volume' : {'type' : str, 'value' : ['All RE', 'RE Uptill Load', 'All Load', 'None']},
-        'PPA_Price' : {'type' : float, 'value' : None},  
-        'Floor_Price' : {'type' : float, 'value' : None}, 
-        'Excess_RE_Purchase_Price' : {'type' : float, 'value' : None}, 
-        'Excess_RE_Sale_Price' : {'type' : float, 'value' : None},  
-        'LGC_Volume_Type' : {'type' : str, 'value' : None},  
-        'LGC_Purhcase_Volume' : {'type' : str, 'value' : None}, 
-        'LGC_Purchase_Price' : {'type' : float, 'value' : None},  
-        'Load_MLF' : {'type' : float, 'value' : None},  
-        'Load_DLF' : {'type' : float, 'value' : None},  
-        'Generator_MLF' : {'type' : float, 'value' : None}, 
-        'Generator_DLF' : {'type' : float, 'value' : None},  
-        'Target_Period' : {'type' : str, 'value' : None},  
-        'Yearly_Target_MWh' : {'type' : float, 'value' : None},  
-        'Yearly_Short_Fall_Penalty_MWh' : {'type' : float, 'value' : None}, 
-        'Yearly_LGC_target_LGC' : {'type' : float, 'value' : None},  
-        'Yearly_LGC_short_fall_penalty_LGC' : {'type' : float, 'value' : None},  
-        'Average_Wholesale_Price' : {'type' : float, 'value' : None}, 
-        'Wholesale_Price_ID' : {'type' : str, 'value' : None}, 
-        'Load_ID' : {'type' : str, 'value' : None},  
-        'Generator_ID' : {'type' : str, 'value' : None},           # check against any cols with Generator_ID in the name
-        'Emissions_Region_ID' : {'type' : str, 'value' : None},  
-        'Scaling_Period' : {'type' : str, 'value' : None},         # should be one of a few choices - TODO where to check this?
-        'Scaling_Factor' : {'type' : float, 'value' : None}, 
-        'Scale_to_ID' : {'type' : str, 'value' : None}, 
-        'Hybrid_Percent' : {'type' : float, 'value' : None},     # check against any cols with Hybrid_Percent in the name
-        'Hybrid_Mix_Name' : {'type' : str, 'value' : None}
-    }
-    return dtype_dict
-
-# Check scenarios df to make sure all columns are present and dtypes are correct:
-def _check_scenarios(scenario_row, dtypes):
-    dtypes = get_scenario_dtypes()
-
-    for col, dtype in dtypes.items():
-        data_type = dtype['type']
-        values = dtype['value']
-        pass
-
-    return
-
 # Test help functions:
 def _check_missing_data(df:pd.DataFrame) -> pd.DataFrame:
     if df.empty:
@@ -169,3 +109,73 @@ def concat_shaped_profiles(
     long_data = long_data.set_index('DateTime')
 
     return long_data.copy()
+
+
+# Helper function to calculate yearly indexation:
+def yearly_indexation(
+        df:pd.DataFrame,
+        strike_price:float,
+        indexation:float|list[float]
+) -> pd.DataFrame:
+    
+    years = df.index.year.unique()
+    
+    # If the value given for indexation is just a float, or the list isn't as long
+    # as the number of periods, keep adding the last element of the list until
+    # the length is correct.
+    if type(indexation) != list:
+        indexation = [indexation] * len(years)
+
+    while len(indexation) < len(years):
+        indexation.append(indexation[-1])
+
+    spi_map = {}
+    for i, year in enumerate(years):
+        spi_map[year] = strike_price
+        strike_price += strike_price * indexation[i]/100
+
+    spi_map[year] = strike_price
+
+    df_with_strike_price = df.copy()
+
+    df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price.index.year
+    df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price['Strike Price (Indexed)'].map(spi_map)
+
+    return df_with_strike_price['Strike Price (Indexed)']
+
+
+# Same as above, but for quarterly instance:
+def quarterly_indexation(
+        df:pd.DataFrame,
+        strike_price:float,
+        indexation:float|list[float]
+) -> pd.DataFrame:
+    
+    years = df.index.year.unique()
+
+    quarters = [(year, quarter) for year in years for quarter in range(1, 5)]
+
+    # If the value given for indexation is just a float, or the list isn't as long
+    # as the number of periods, keep adding the last element of the list until
+    # the length is correct.
+    if type(indexation) != list:
+        indexation = [indexation] * len(quarters)
+
+    while len(indexation) < len(quarters):
+        indexation.append(indexation[-1])
+
+    spi_map = {}
+    for i, quarter in enumerate(quarters):
+        spi_map[quarter] = strike_price
+        strike_price += strike_price * indexation[i]/100
+
+    spi_map[quarter] = strike_price
+
+    df_with_strike_price = df.copy()
+
+    tuples = list(zip(df_with_strike_price.index.year.values, df_with_strike_price.index.quarter.values))
+
+    df_with_strike_price['Strike Price (Indexed)'] = tuples
+    df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price['Strike Price (Indexed)'].map(spi_map)
+
+    return df_with_strike_price['Strike Price (Indexed)']
