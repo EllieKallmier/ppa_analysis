@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "ppa analysis"
+version = "0.1.0"
+description = "A tool to help prospective PPA buyers understand different types of PPA contracts and their potential outcomes, both financially and environmentally."
+authors = ["Ellie Kallmier <e.kallmier@student.unsw.edu.au>"]
+license = "MIT License"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.2.2"
+numpy = "^1.26.4"
+os0 = "^2.0.1"
+seaborn = "^0.13.2"
+matplotlib = "^3.8.4"
+plotly = "^5.21.0"
+nemed = "^0.3.3"
+holidays = "^0.47"
+nemosis = "^3.4.0"
+mip = "^1.15.0"
+nbformat = "^4.2.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
