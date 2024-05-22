@@ -13,8 +13,7 @@ logging.getLogger("nemosis").setLevel(logging.WARNING)
 def get_wholesale_price_data(
     start_date:pd.Timestamp, 
     end_date:pd.Timestamp, 
-    cache:str, 
-    regions:list[str],
+    cache:str,
     period:str='H'
 ) -> pd.DataFrame:
     
@@ -26,8 +25,8 @@ def get_wholesale_price_data(
                                    table_name='DISPATCHPRICE',
                                    raw_data_location=cache,
                                    select_columns=['REGIONID', 'SETTLEMENTDATE', 'RRP'],
-                                   filter_cols=['REGIONID'],
-                                   filter_values=(regions,)
+                                   fformat='parquet',
+                                   keep_csv=False
                                    )
     
     price_data = price_data.reset_index()
@@ -51,7 +50,11 @@ def get_predispatch_prices(
     regions:list[str],
     period:str='H'
 ) -> pd.DataFrame:
-
-
-
     return
+
+
+def get_preprocessed_price_data(file, regions):
+    price_data = pd.read_parquet(file)
+    regions = list(set(regions))
+    price_data = price_data.loc[:, ['RRP: ' + region for region in regions]]
+    return price_data

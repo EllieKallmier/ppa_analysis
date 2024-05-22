@@ -6,7 +6,7 @@
 import pandas as pd
 import numpy as np
 import residuals
-from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS
+from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS, CBC
 from helper_functions import *
 
 # TODO: add error checking
@@ -196,7 +196,7 @@ def run_hybrid_optimisation(
     R = range(len(contracted_energy))       # how many time intervals in total
     G = range(len(generation_data.columns))         # how many columns of generators
 
-    m = Model()
+    m = Model(solver_name=CBC)
     percent_of_generation = {}
     # Add a 'percentage' variable for each generator
     for g in G:

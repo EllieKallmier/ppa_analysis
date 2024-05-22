@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import logging
 from datetime import timedelta, datetime
+import os
+from collections import Counter
 
 # Test help functions:
 def _check_missing_data(df:pd.DataFrame) -> pd.DataFrame:
@@ -179,3 +181,18 @@ def quarterly_indexation(
     df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price['Strike Price (Indexed)'].map(spi_map)
 
     return df_with_strike_price['Strike Price (Indexed)']
+
+
+def get_data_years(cache_directory):
+    """
+    Find all the years that have a complete set of generation, pricing and emissions data in the cache
+    directory. Assumes that only generation, pricing and emissions are in the cache directory and that
+    files are parquet files with the year being the last part of the filename before .parquet
+    """
+
+    files_in_cache = os.listdir(cache_directory)
+    years_cache = [f[-12:-8] for f in files_in_cache]  # Extract the year from each filename.
+    year_counts = Counter(years_cache)  # Count the number of files in the cache for each year.
+    # Get all the year that hav three files cached for each year.
+    years_with_complete_data = [year for (year, count) in year_counts.items() if count >= 3]
+    return years_with_complete_data
