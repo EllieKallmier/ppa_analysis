@@ -9,8 +9,6 @@ import residuals
 from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS
 from helper_functions import *
 
-# TODO: add error checking
-
 # -------------------------------- HYBRID CALC ---------------------------------
 # Helper function to create hybrid generation profiles from a given set of gen 
 # profiles.
@@ -178,12 +176,13 @@ def run_hybrid_optimisation(
     gen_names = {}
     gen_data_series = {}
     lcoe = {}
-    wholesale_prices_vals = np.array(wholesale_prices.clip(lower=1.0).values)
+    wholesale_prices_vals = np.array(wholesale_prices.clip(lower=1.0).values)   # clipped to avoid over-valuing energy in negative pricing intervals, and to enforce the physical constraints (need 'some' price at all times otherwise 'unmatched' energy can get huge)
 
-    market_floor = 1000.0  # market price floor value to use as oversupply penalty - this is max. "bad outcome" if buyer is left with excess to sell on. 
+    market_floor = 1000.0  # market price floor value to use as oversupply penalty - this is max. "bad outcome" if buyer is left with excess to sell on, wholesale exposed.
 
     if contract_type == '24/7':
-        penalty_247 = 16600.0  # market price cap to use as penalty for an unmet CFE score - to emphasise the result
+        penalty_247 = 16600.0  # market price cap to use as penalty for an unmet CFE score - meeting this score is a priority for sellers to mitigate risk
+        
     else:
         penalty_247 = 0.0
 
@@ -203,7 +202,7 @@ def run_hybrid_optimisation(
         percent_of_generation[str(g)] = m.add_var(var_type=CONTINUOUS, lb=0.0, ub=1.0)
 
     # Define each of the key variables, all continuous, including lb==0.0 for all.
-    excess = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
+    # excess = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
     unmatched = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub = contracted_energy.max()) for r in R]
     hybrid_gen_sum = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
 
@@ -213,10 +212,13 @@ def run_hybrid_optimisation(
 
     # add the objective: to minimise firming (unmatched)
     m.objective = minimize(
-        xsum((unmatched[r]*wholesale_prices_vals[r] + excess[r]*excess_penalty + xsum(gen_data_series[str(g)][r]*percent_of_generation[str(g)]*lcoe[str(g)] for g in G)) for r in R) \
+        xsum((unmatched[r]*wholesale_prices_vals[r] + xsum(gen_data_series[str(g)][r]*percent_of_generation[str(g)]*lcoe[str(g)] for g in G)) for r in R) \
         + oversupply_flip_var * market_floor \
         + penalty_247 * unmet_cfe_score
     )
+
+    # NOTE: removed excess_penalty - as pointed out by Nick, it's not really doing much now and other constraints are helping out.
+    # I guess it was also performing a kind of 'flattening' incentive (bottom up and top down) - but not needed.
 
     # Add to hybrid_gen_sum variable by adding together each generation trace by the percentage variable
     for r in R:
@@ -225,7 +227,8 @@ def run_hybrid_optimisation(
 
     for r in R:
         m += unmatched[r] >= contracted_energy[r] - hybrid_gen_sum[r]
-        m += excess[r] >= hybrid_gen_sum[r] - contracted_energy[r]
+        m += unmatched[r] <= contracted_energy[r]
+        # m += excess[r] >= hybrid_gen_sum[r] - contracted_energy[r]
 
     # Add constraint to make sure the hybrid total is greater than or equal to
     # the "total_sum" value - keeps assumption of 100% load met (not matched)
@@ -247,7 +250,8 @@ def run_hybrid_optimisation(
     hybrid_trace['Hybrid'] = 0
     
     # If the optimisation is infeasible: try again with different constraints based
-    # on the contract type.
+    # on the contract type. 
+    # TODO: get rid of this recursion!!
     if status == OptimizationStatus.INFEASIBLE:
         print('Infeasible problem under current constraints: running again with Pay as Produced structure')
         m.clear()
@@ -280,15 +284,15 @@ def run_hybrid_optimisation(
         check_df['Hybrid Gen'] = hybrid_trace['Hybrid'].copy()
 
         check_df['Unmatched'] = [unmatched[r].x for r in R]
-        check_df['Excess'] = [excess[r].x for r in R]
+        # check_df['Excess'] = [excess[r].x for r in R]
 
         check_df['Real Unmatched'] = (check_df['Contracted'] - check_df['Hybrid Gen']).clip(lower=0.0)
-        check_df['Real Excess'] = (check_df['Hybrid Gen'] - check_df['Contracted']).clip(lower=0.0)
+        # check_df['Real Excess'] = (check_df['Hybrid Gen'] - check_df['Contracted']).clip(lower=0.0)
 
         check_df['Check unmatched'] = (check_df['Real Unmatched'].round(2) == check_df['Unmatched'].round(2))
-        check_df['Check excess'] = (check_df['Real Excess'].round(2) == check_df['Excess'].round(2))
+        # check_df['Check excess'] = (check_df['Real Excess'].round(2) == check_df['Excess'].round(2))
 
-        check_df = check_df[(check_df['Check unmatched'] == False) | (check_df['Check excess'] == False)].copy()
+        check_df = check_df[(check_df['Check unmatched'] == False)].copy()
 
         assert check_df.empty == True, "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
 
@@ -362,8 +366,6 @@ def hybrid_shaped(
             resampled_gen_data['Contracted Energy'] += resampled_gen_data[name] * (contracted_percent_gen)
     
     contracted_gen_full_length = concat_shaped_profiles(redef_period, resampled_gen_data, hybrid_trace_whole_length)
-
-    contracted_gen_full_length *= (upscale_factor + 0.1)
 
     df = pd.concat([df, contracted_gen_full_length['Contracted Energy']], axis='columns')
 
@@ -445,6 +447,7 @@ def hybrid_baseload(
 
     return df, percentages
 
+## The contracted amount for a 24/7 PPA gives the minimum cfe score
 def hybrid_247(
         redef_period:str,
         contracted_amount:float, 
@@ -464,7 +467,7 @@ def hybrid_247(
 
     # Get first year load (and total sum):
     first_year_load = first_year['Load'].copy()
-    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+    first_year_load_sum = first_year_load.sum(numeric_only=True) ##* (contracted_amount/100)    # This needs fixing actually!! Maybe use the percentile_val for cfe_score_min instead?
 
     hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
         contracted_energy=first_year['Load'].copy(),
