@@ -18,8 +18,7 @@ import nemed
 def get_avg_emissions_intensity(
         start_date:pd.Timestamp, 
         end_date:pd.Timestamp, 
-        cache:str, 
-        regions:list[str],
+        cache:str,
         period:str='H'
         ) -> pd.DataFrame:
     
@@ -29,7 +28,6 @@ def get_avg_emissions_intensity(
     nemed_result = nemed.get_total_emissions(start_time = start_date_str,
                                              end_time = end_date_str, 
                                              cache = cache,
-                                             filter_regions = regions,
                                              by = None,                         # don't aggregate using inbuilt NEMED functionality - can't do 30 min increments
                                              assume_energy_ramp=True,           # can set this to False for faster computation / less accuracy
                                              generation_sent_out=False          # currently NOT considering auxiliary load factors (from static tables)
@@ -90,3 +88,10 @@ def get_both_emissions(start, end, cache, regions, period=None):
     emissions_df = average_emissions.merge(marginal_emissions, how='outer', on='DateTime')
 
     return emissions_df
+
+
+def get_preprocessed_avg_intensity_emissions_data(file, regions):
+    emissions_data = pd.read_parquet(file)
+    regions = list(set(regions))
+    emissions_data = emissions_data.loc[:, ['AEI: ' + region for region in regions]]
+    return emissions_data
