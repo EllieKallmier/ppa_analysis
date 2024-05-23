@@ -15,7 +15,7 @@ def run_battery_optimisation(
     
     # Get the useful traces first - it depends a bit on the order of operations
     # but the load to be used here will either just be 'Load' or 'Shifted load' ??
-    firming_prices = df[f'Firming price: {region}'].values
+    wholesale_prices = df[f'RRP: {region}'].clip(lower=1.0).values
     excess_load = np.maximum(df[load_col_to_use] - df['Contracted Energy'], 0).values
     excess_gen = np.maximum(df['Contracted Energy'] - df[load_col_to_use], 0).values
 
@@ -34,7 +34,7 @@ def run_battery_optimisation(
     discharge_coef = [m.add_var(var_type=BINARY) for i in I]
 
     # Initial simple objective: minimise cost of firming - firming = excess load - battery discharge
-    m.objective = minimize(xsum((excess_load[i] - battery_discharge[i]) * (firming_prices[i]) for i in I))
+    m.objective = minimize(xsum((excess_load[i] - battery_discharge[i]) * (wholesale_prices[i]) for i in I))
 
     # Define charging and discharging: 
     # TODO: if needed, update to take into account the time interval (to convert from energy to power or vice versa)
