@@ -261,7 +261,6 @@ def lauch_input_collector():
 
     return input_collector
 
-
 def get_unit_capcity(unit):
     duid = unit.split(':')[0]
     registered_capacity = static_table(
@@ -279,47 +278,44 @@ def add_editor_for_generator(generator_data_editor, generator, input_collector):
         generator_data_set = advanced_settings.GEN_COST_DATA[generator_data_set_name]
         for generator_type in generator_data_set.keys():
             if generator_type.upper() in generator:
-                generator_data_editor[f'{generator}_label'] = HTML(
+                generator_data_editor[f'{generator}'] = {}
+
+                generator_data_editor[f'{generator}']['label'] = HTML(
                     f'''
                     <h5>{generator}:</h5>
                     '''
                 )
+
                 capacity = get_unit_capcity(generator)
-                generator_data_editor[f'{generator}_capcity'] = widgets.FloatText(
+                generator_data_editor[f'{generator}']['capacity'] = widgets.FloatText(
                     value=capacity,
                     description='Nameplate Capacity (kW)',
                 )
-                generator_data_editor[f'{generator}_fixed_om'] = widgets.FloatText(
+
+                generator_data_editor[f'{generator}']['fixed_om'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Fixed O&M ($/kW)'],
                     description='Fixed O&M ($/kW)',
                 )
-                generator_data_editor[f'{generator}_variable_om'] = widgets.FloatText(
+ 
+                generator_data_editor[f'{generator}']['variable_om'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Variable O&M ($/kWh)'],
                     description='Variable O&M ($/kWh)',
                 )
-                generator_data_editor[f'{generator}_capital'] = widgets.FloatText(
+
+                generator_data_editor[f'{generator}']['capital'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Capital ($/kW)'],
                     description='Capital ($/kW)',
                 )
-                generator_data_editor[f'{generator}_capacity_factor'] = widgets.FloatText(
+
+                generator_data_editor[f'{generator}']['capacity_factor'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Capacity Factor'],
                     description='Capacity Factor',
                 )
 
 def remove_editor_for_generator(generator_data_editor, generator):
     with generator_data_editor['out']:
-        generator_data_editor[f'{generator}_capcity'].close
-        del generator_data_editor[f'{generator}_capcity']
-        generator_data_editor[f'{generator}_fixed_om'].close
-        del generator_data_editor[f'{generator}_fixed_om']
-        generator_data_editor[f'{generator}_variable_om'].close
-        del generator_data_editor[f'{generator}_variable_om']
-        generator_data_editor[f'{generator}_capital'].close
-        del generator_data_editor[f'{generator}_capital']
-        generator_data_editor[f'{generator}_capacity_factor'].close
-        del generator_data_editor[f'{generator}_capacity_factor']
-        generator_data_editor[f'{generator}_label'].value = ""
-        del generator_data_editor[f'{generator}_label']
+        generator_data_editor[f'{generator}'].close
+        del generator_data_editor[f'{generator}']
 
 def update_generator_data_editor(generator_data_editor, input_collector, change=None):
 
@@ -346,7 +342,9 @@ def update_generator_data_editor(generator_data_editor, input_collector, change=
     with generator_data_editor['out']:
         for key, value in generator_data_editor.items():
             if key != 'out':
-                display(value)
+                for k, v in value.items():
+                    display(v)
+                    
     display(generator_data_editor['out'])
     return generator_data_editor
 
