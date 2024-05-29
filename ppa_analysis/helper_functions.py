@@ -1,10 +1,9 @@
 # File to hold functions that will assist with testing and validation. 
 import pandas as pd
-import numpy as np
-import logging
-from datetime import timedelta, datetime
+from datetime import timedelta
 import os
 from collections import Counter
+
 
 # Test help functions:
 def _check_missing_data(df:pd.DataFrame) -> pd.DataFrame:
@@ -18,6 +17,7 @@ def _check_missing_data(df:pd.DataFrame) -> pd.DataFrame:
         df = df.fillna(0.0)
 
     return df
+
 
 # Returns an integer representing minutes in the interval
 def get_interval_length(df:pd.DataFrame) -> int:
@@ -189,7 +189,9 @@ def get_data_years(cache_directory):
     directory. Assumes that only generation, pricing and emissions are in the cache directory and that
     files are parquet files with the year being the last part of the filename before .parquet
     """
-
+    import os
+    print(os.getcwd())
+    print(cache_directory)
     files_in_cache = os.listdir(cache_directory)
     years_cache = [f[-12:-8] for f in files_in_cache]  # Extract the year from each filename.
     year_counts = Counter(years_cache)  # Count the number of files in the cache for each year.
