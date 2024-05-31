@@ -1,17 +1,14 @@
 import os
 import functools
-from collections import OrderedDict
 
 import ipywidgets as widgets
 from IPython.display import display, HTML
 from nemosis import static_table
 
-import helper_functions
-import advanced_settings
-from getting_data import import_gen_data
+from ppa_analysis import helper_functions, advanced_settings, import_gen_data
 
 
-def lauch_input_collector():
+def launch_input_collector():
 
     display(HTML(
         '''

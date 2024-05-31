@@ -5,9 +5,8 @@
 
 import pandas as pd
 import numpy as np
-import residuals
 from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS, CBC
-from helper_functions import *
+from ppa_analysis.helper_functions import *
 
 # -------------------------------- HYBRID CALC ---------------------------------
 # Helper function to create hybrid generation profiles from a given set of gen 

@@ -1,9 +1,9 @@
 import pandas as pd
-import numpy as np
-from datetime import timedelta, datetime
-from typing import List
+from datetime import datetime
 from nemosis import dynamic_data_compiler, static_table
-from helper_functions import _check_missing_data, get_interval_length, _check_interval_consistency
+
+from ppa_analysis.helper_functions import _check_missing_data, get_interval_length, \
+    _check_interval_consistency
 
 
 # Fetch the generation data using NEMOSIS: this function acts as a wrapper that
