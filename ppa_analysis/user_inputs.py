@@ -112,7 +112,7 @@ def launch_input_collector():
         disabled=False,
     )
     display(input_collector['firming_contract_type'])
-    
+
     input_collector['settlement_period'] = widgets.Dropdown(
         options=advanced_settings.SETTLEMENT_PERIODS,
         value=advanced_settings.SETTLEMENT_PERIODS[0],
@@ -120,7 +120,7 @@ def launch_input_collector():
         disabled=False,
     )
     display(input_collector['settlement_period'])
-    
+
     input_collector['contract_amount'] = widgets.BoundedFloatText(
         value=100.0,
         min=0,
@@ -257,6 +257,7 @@ def launch_input_collector():
     display(input_collector['generator_data_set'])
 
     return input_collector
+
 
 def get_unit_capcity(unit):
     duid = unit.split(':')[0]
