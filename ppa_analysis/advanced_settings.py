@@ -1,20 +1,29 @@
+"""
+This module defines the settings used by the user interface notebook and the associated functionality that supports
+the interface. The average user will probably not need to modify these settings but a more advance user who wishes to
+modify the interface functionality may need to.
+
+Two main types of settings are defined here:
+
+1. Path settings that specify where different datasets are stored.
+2. Options settings that define which options are available for users to select through the interface.
+
+"""
 from pathlib import Path
 
-NEM_REGIONS = ['QLD1', 'NSW1', 'VIC1', 'SA1', 'TAS1']
 
-LOAD_COL_NAME = 'Load'
-LOAD_DATETIME_COL_NAME = 'TS'
-LOAD_TIMEZONE = ''
+# Path settings:
+
 LOAD_DATA_DIR = Path('data_caches/c_and_i_customer_loads')
-
-GEN_DATETIME_COL_NAME = ''
-DAY_FIRST = True
-
 YEARLY_DATA_CACHE = Path('data_caches/yearly_data_files/')
-
 RAW_DATA_CACHE = 'data_caches/gen_data_cache'
 EMISSIONS_CACHE = 'data_caches/nemed_cache'
 PRICING_CACHE = 'data_caches/pricing_cache'
+
+# User interface options:
+
+NEM_REGIONS = ['QLD1', 'NSW1', 'VIC1', 'SA1', 'TAS1']
+
 GEN_TECH_TYPE_S = ['WIND - ONSHORE', 'PHOTOVOLTAIC FLAT PANEL']
 
 CONTRACT_TYPES = [

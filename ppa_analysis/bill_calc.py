@@ -2,12 +2,26 @@ import pandas as pd
 import numpy as np
 
 
-# Helper function to calculate yearly indexation:
 def yearly_indexation(
         df: pd.DataFrame,
         strike_price: float,
         indexation: float | list[float]
 ) -> pd.DataFrame:
+    """
+    Helper function to calculate yearly indexation.
+
+    The function takes a dataframe with an index of type datetime and returns the same dataframe with an additional
+    column named 'Strike Price (Indexed)'. For each year after the initial year in the index, the strike price is
+    increased by the specified indexation rate. If the indexation rate is provided as a float then the same rate is
+    used for all years. If a list is then each year uses the next indexation rate in the list and if there are more
+    years than rates in the list then last rate is reused.
+
+    :param df: with datetime index
+    :param strike_price: in $/MW/h
+    :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
+    :return:
+    """
+
     years = df.index.year.unique()
 
     # If the value given for indexation is just a float, or the list isn't as long
@@ -39,6 +53,21 @@ def quarterly_indexation(
         strike_price: float,
         indexation: float | list[float]
 ) -> pd.DataFrame:
+    """
+    Helper function to calculate quarterly indexation.
+
+    The function takes a dataframe with an index of type datetime and returns the same dataframe with an additional
+    column named 'Strike Price (Indexed)'. For each quarter after the initial quarter in the index, the strike price is
+    increased by the specified indexation rate. If the indexation rate is provided as a float then the same rate is
+    used for all quarters. If a list is given then each quarter uses the next indexation rate in the list and if there
+    are more quarters than rates in the list then last rate is reused.
+
+    :param df: with datetime index
+    :param strike_price: in $/MWh
+    :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
+    :return:
+    """
+
     years = df.index.year.unique()
 
     quarters = [(year, quarter) for year in years for quarter in range(1, 5)]
@@ -79,6 +108,27 @@ def calculate_ppa(
         index_period: str = 'Y',  # and default period is yearly for slightly faster calcs just in case
         floor_price: float = -1000.0,  # default value is market floor
 ) -> pd.DataFrame:
+    """
+    Calculates the cost associated with the settlement of the PPA contract for difference. Indexation is applied to
+    the strike price, and the floor price is applied to the wholesale spot price before the settlement. Results are
+    returned in a dataframe on settlement period basis with the index specifying the start of settlement period and
+    the column 'PPA Settlement' specifying the cost of the PPA, the total energy traded through the contract through
+    each period is provided in the column 'Contracted Energy' and the value of contracted energy at the indexed PPA
+    strike price is provided in the column 'PPA Value'.
+
+    :param df: Dataframe with datetime index, a column specifying the wholesale spot price in the load region (
+        name formated like RRP: NSW1), and a column specifying the contracted energy name 'Contracted Energy'.
+    :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
+    :param strike_price: The strike price of the contract in $/MWh
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+        for quarterly and 'M' for monthly.
+    :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
+    :param index_period: How frequently to index the strike price as a st. 'Y' for yearly or 'Q' for quarterly.
+    :param floor_price: Minimum wholesale price to use for settlement calculation i.e. for each interval the minimum of
+        the floor_price and the wholesale price is taken, and then the resulting price is used to calculate settlement.
+    :return:
+    """
+
     # add indexed strike_price column to df:
     indexation_calc = {'Y': yearly_indexation, 'Q': quarterly_indexation}
     strike_prices_indexed = indexation_calc[index_period](df, strike_price, indexation)
@@ -103,6 +153,17 @@ def calculate_excess_electricity(
         settlement_period: str,
         excess_price: float | str = 'Wholesale'  # need to validate this input
 ) -> pd.DataFrame:
+    """
+    Calculates the contracted energy in excess of the load and the value of this energy.
+
+    :param df:
+    :param load_region:
+    :param settlement_period:
+    :param excess_price:
+    :return:
+    """
+
+
     # then selling any excess energy (contracted, but not used by the buyer) - keeping LGCs associated if bundled!!!
     # excess price is determined as either wholesale prices or a fixed price.
     if type(excess_price) == str and excess_price != 'Wholesale':
