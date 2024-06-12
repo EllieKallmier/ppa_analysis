@@ -48,11 +48,10 @@ def daily_load_shifting(
         df:pd.DataFrame,
         flexibility_rating:str,
         load_region:str,            # region that the load is in, to select traces
-        price_weight:float=0.0,     # weight on prices in objective
-        raise_price:float=1,    # price on 'raising' load above original value
-        lower_price:float=1,    # price on 'lowering' load below original value
-        ramp_up_price:float=100,    # price on ramp: acts as penalty against extreme ramps.
-        ramp_down_price:float=100    # price on ramp: acts as penalty against extreme ramps.
+        raise_price:float=0.0,    # price on 'raising' load above original value
+        lower_price:float=0.0,    # price on 'lowering' load below original value
+        ramp_up_price:float=0.01,    # price on ramp: acts as penalty against extreme ramps.
+        ramp_down_price:float=0.01    # price on ramp: acts as penalty against extreme ramps.
 ) -> pd.DataFrame:
     
     results_df = pd.DataFrame(columns=['Load dispatch','Contract', 'Original load', 'Base load', 'Firming', 'Raised load', 'Ramp up', 'Ramp down'])
@@ -116,7 +115,7 @@ def daily_load_shifting(
                 # and a penalty on raising the load above its original value (small, can be set to 0)
                 m.objective = minimize(
                     xsum(
-                        (unmatched[i]*wholesale_prices[i]*price_weight + \
+                        (unmatched[i]*wholesale_prices[i] + \
                         raised_load[i]*raise_price \
                             - lowered_load[i]*lower_price \
                             + ramp_up[i]*ramp_up_price - \
