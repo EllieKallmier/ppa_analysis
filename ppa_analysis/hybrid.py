@@ -164,11 +164,9 @@ def run_hybrid_optimisation(
         wholesale_prices:pd.Series,
         generation_data:pd.DataFrame,
         gen_costs:dict,
-        excess_penalty:float,
         total_sum:float,
         contract_type:str,
-        cfe_score_min:float=0.0,
-        upscale_factor:float=1.0
+        cfe_score_min:float=0.0
 ) -> tuple[pd.Series, dict[str:dict[str:float]]]:
 
     # TODO: consider if this return structure is actually best/fit for purpose here
@@ -179,11 +177,11 @@ def run_hybrid_optimisation(
 
     market_floor = 1000.0  # market price floor value to use as oversupply penalty - this is max. "bad outcome" if buyer is left with excess to sell on, wholesale exposed.
 
-    if contract_type == '24/7':
-        penalty_247 = 16600.0  # market price cap to use as penalty for an unmet CFE score - meeting this score is a priority for sellers to mitigate risk
+    if contract_type in ['24/7']:#, 'Baseload']:#== '24/7':
+        unmatched_penalty = 16600.0  # market price cap to use as penalty for an unmet CFE score - meeting this score is a priority for sellers to mitigate risk
         
     else:
-        penalty_247 = 0.0
+        unmatched_penalty = 0.0
 
     for _, gen in enumerate(generation_data):
         gen_data_series[str(_)] = generation_data[gen].copy()
@@ -213,11 +211,8 @@ def run_hybrid_optimisation(
     m.objective = minimize(
         xsum((unmatched[r]*wholesale_prices_vals[r] + xsum(gen_data_series[str(g)][r]*percent_of_generation[str(g)]*lcoe[str(g)] for g in G)) for r in R) \
         + oversupply_flip_var * market_floor \
-        + penalty_247 * unmet_cfe_score
+        + unmatched_penalty * unmet_cfe_score
     )
-
-    # NOTE: removed excess_penalty - as pointed out by Nick, it's not really doing much now and other constraints are helping out.
-    # I guess it was also performing a kind of 'flattening' incentive (bottom up and top down) - but not needed.
 
     # Add to hybrid_gen_sum variable by adding together each generation trace by the percentage variable
     for r in R:
@@ -227,20 +222,15 @@ def run_hybrid_optimisation(
     for r in R:
         m += unmatched[r] >= contracted_energy[r] - hybrid_gen_sum[r]
         m += unmatched[r] <= contracted_energy[r]
-        # m += excess[r] >= hybrid_gen_sum[r] - contracted_energy[r]
 
     # Add constraint to make sure the hybrid total is greater than or equal to
     # the "total_sum" value - keeps assumption of 100% load met (not matched)
     m += xsum(hybrid_gen_sum[r] for r in R) >= total_sum
 
-    # Set the oversupply variable: multiplid by market cap this disincentivises
+    # Set the oversupply variable: multiplied by market floor this disincentivises
     # overcontracting unless specified directly.
     m += oversupply_flip_var >= xsum(hybrid_gen_sum[r] for r in R) - total_sum
     m += unmet_cfe_score >= xsum(unmatched[r] for r in R) - (1 - cfe_score_min) * total_sum
-
-    # Add constraint around CFE matching percent:
-    # if contract_type == '24/7':
-    #     m += xsum(unmatched[r] for r in R) <= (1 - cfe_score_min) * total_sum
     
     m.verbose = 0
     status = m.optimize()
@@ -252,9 +242,9 @@ def run_hybrid_optimisation(
     # on the contract type. 
     # TODO: get rid of this recursion!!
     if status == OptimizationStatus.INFEASIBLE:
-        print('Infeasible problem under current constraints: running again with Pay as Produced structure')
+        print('Infeasible problem under current constraints.')
         m.clear()
-        return run_hybrid_optimisation(contracted_energy, wholesale_prices, generation_data, gen_costs, excess_penalty, total_sum, 'Pay as Produced')
+        return #    maybe need to raise an error here instead/as well? For user benefit?
         
         
     # If the optimisation is solvable (and solved): create the new hybrid trace
@@ -283,14 +273,8 @@ def run_hybrid_optimisation(
         check_df['Hybrid Gen'] = hybrid_trace['Hybrid'].copy()
 
         check_df['Unmatched'] = [unmatched[r].x for r in R]
-        # check_df['Excess'] = [excess[r].x for r in R]
-
         check_df['Real Unmatched'] = (check_df['Contracted'] - check_df['Hybrid Gen']).clip(lower=0.0)
-        # check_df['Real Excess'] = (check_df['Hybrid Gen'] - check_df['Contracted']).clip(lower=0.0)
-
         check_df['Check unmatched'] = (check_df['Real Unmatched'].round(2) == check_df['Unmatched'].round(2))
-        # check_df['Check excess'] = (check_df['Real Excess'].round(2) == check_df['Excess'].round(2))
-
         check_df = check_df[(check_df['Check unmatched'] == False)].copy()
 
         assert check_df.empty == True, "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
@@ -298,7 +282,7 @@ def run_hybrid_optimisation(
         # clear the model at end of run so memory isn't overworked.
         m.clear()
 
-        return hybrid_trace['Hybrid'], results, upscale_factor
+        return hybrid_trace['Hybrid'], results
     
 
 # 
@@ -344,12 +328,11 @@ def hybrid_shaped(
     resampled_gen_data = get_percentile_profile(redef_period, first_year_gen, percentile_val)
     shaped_first_year = concat_shaped_profiles(redef_period, resampled_gen_data, shaped_first_year)
 
-    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+    hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year_load,
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=shaped_first_year.copy(),
         gen_costs=generator_info,
-        excess_penalty=0.5,
         total_sum=first_year_load_sum,
         contract_type='Shaped'
     )
@@ -409,7 +392,6 @@ def hybrid_baseload(
         # the contracted energy needs to be updated by the contracted_amount percentage:
         avg_hourly_load = pd.DataFrame(first_year_load.resample(redef_period).mean(numeric_only=True) * (contracted_amount / 100))
 
-        
         avg_hourly_load['Load'] = avg_hourly_load['Load']
         avg_hourly_load['M'] = avg_hourly_load.index.month
         avg_hourly_load['Q'] = avg_hourly_load.index.quarter
@@ -426,14 +408,15 @@ def hybrid_baseload(
 
     first_year = df.iloc[:24 * (365 + leap_year)].copy()
     
-    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+    hybrid_trace_series, percentages = run_hybrid_optimisation(
         contract_type='Baseload',
         contracted_energy=first_year['Contracted Energy'].copy(),
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
-        excess_penalty=0.5,
-        total_sum=first_year_load.sum(numeric_only=True)
+        total_sum=first_year_load.sum(numeric_only=True),
+        # cfe_score_min=0.9
+        # consider adding here a cfe_score_min to enfore a penalty on meeting the contracted trace...
     )
 
     first_year = pd.concat([first_year, hybrid_trace_series], axis='columns')
@@ -466,14 +449,13 @@ def hybrid_247(
 
     # Get first year load (and total sum):
     first_year_load = first_year['Load'].copy()
-    first_year_load_sum = first_year_load.sum(numeric_only=True) ##* (contracted_amount/100)    # This needs fixing actually!! Maybe use the percentile_val for cfe_score_min instead?
+    first_year_load_sum = first_year_load.sum(numeric_only=True)
 
-    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+    hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year['Load'].copy(),
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
-        excess_penalty=0.5,
         total_sum=first_year_load_sum,
         contract_type='24/7',
         cfe_score_min=contracted_amount/100
@@ -484,6 +466,8 @@ def hybrid_247(
     for name, det_dict in percentages.items():
         hybrid_percent_gen = det_dict['Percent of generator output'] / 100
         df['Hybrid'] += df[name] * hybrid_percent_gen
+
+    df['Contracted Energy'] = df['Hybrid'].copy()
 
     return df, percentages
 
@@ -508,12 +492,11 @@ def hybrid_pap(
     first_year_load = first_year['Load'].copy()
     first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
 
-    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+    hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year_load,
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
-        excess_penalty=0.5,     # note: need to add a small (even if negligable) penalty for excess - to enforce calculation of the 'excess' variable in optimisation.
         total_sum=first_year_load_sum,
         contract_type='Pay as Produced'
     )
@@ -523,6 +506,8 @@ def hybrid_pap(
     for name, det_dict in percentages.items():
         hybrid_percent_gen = det_dict['Percent of generator output'] / 100
         df['Hybrid'] += df[name] * hybrid_percent_gen
+    
+    df['Contracted Energy'] = df['Hybrid'].copy()
 
     return df, percentages
 
@@ -548,12 +533,11 @@ def hybrid_pac(
     first_year_load = first_year['Load'].copy()
     first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
 
-    hybrid_trace_series, percentages, upscale_factor = run_hybrid_optimisation(
+    hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year['Load'].copy(),
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
-        excess_penalty=0.5,     # note: need to add a small (even if negligable) penalty for excess - to enforce calculation of the 'excess' variable in optimisation.
         total_sum=first_year_load_sum,
         contract_type='Pay as Consumed'
     )
