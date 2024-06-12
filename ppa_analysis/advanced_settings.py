@@ -32,7 +32,9 @@ FIRMING_CONTRACT_TYPES = [
 ]
 
 SETTLEMENT_PERIODS = [
-    'Y'
+    'Y',
+    'M',
+    'Q'
 ]
 
 TIME_SERIES_INTERVALS = [

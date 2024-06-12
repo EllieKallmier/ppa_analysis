@@ -231,7 +231,7 @@ def launch_input_collector():
 
     input_collector['exposure_lower_bound'] = widgets.FloatText(
         value=20.0,
-        description='Exposure upper bound ($/MW/h):',
+        description='Exposure lower bound ($/MW/h):',
     )
     display(input_collector['exposure_lower_bound'])
 
