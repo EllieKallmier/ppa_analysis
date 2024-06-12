@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import timedelta, datetime
-from nemosis import dynamic_data_compiler, static_table
-from helper_functions import _check_missing_data, get_interval_length, _check_interval_consistency
+from ppa_analysis import helper_functions
 
 
 # -------------------------------- Get Load Data -------------------------------
@@ -39,7 +38,7 @@ def get_load_data(
     load_data = load_data.set_index('DateTime')
 
     # Check for missing or NaN data and fill with zeros:
-    load_data = _check_missing_data(load_data)
+    load_data = helper_functions._check_missing_data(load_data)
 
     # Finally make sure no outliers or values that don't make sense (negative)
     load_data = load_data.clip(lower=0.0)
