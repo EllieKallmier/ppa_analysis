@@ -36,11 +36,7 @@ def run_battery_optimisation(
     # Initial simple objective: minimise cost of firming - firming = excess load - battery discharge
     m.objective = minimize(xsum((excess_load[i] - battery_discharge[i]) * (wholesale_prices[i]) for i in I))
 
-    # Define charging and discharging: 
     # TODO: if needed, update to take into account the time interval (to convert from energy to power or vice versa)
-    for i in I:
-        m += battery_charge[i] <= excess_gen[i]
-        m += battery_discharge[i] <= excess_load[i]
 
     # Define soe as previous soe + battery charge (*efficiency) - battery discharge (*efficiency)
     for i in range(1, len(excess_load)):
@@ -50,10 +46,15 @@ def run_battery_optimisation(
         m += soe[i] >= soe[i-1] + charging_efficiency*battery_charge[i-1] - \
             (1/discharging_efficiency)*battery_discharge[i-1]
 
+    # Set the initial state of energy to half battery size:
+    m += soe[0] <= size_in_mwh * 0.5
+    m += soe[0] >= size_in_mwh * 0.5
 
     # s.t. constraints:
     # 1. Can't charge and discharge at the same time
     for i in I:
+        m += battery_charge[i] <= excess_gen[i]
+        m += battery_discharge[i] <= excess_load[i]
         m += charge_coef[i] + discharge_coef[i] <= 1 
         m += battery_charge[i] <= charge_coef[i] * rated_power_capacity 
         m += battery_discharge[i] <= discharge_coef[i] * rated_power_capacity
@@ -84,8 +85,7 @@ def run_battery_optimisation(
         battery_data['Load with battery'] = battery_data[load_col_to_use] + \
             battery_data['Charge'] - battery_data['Discharge']
         
-        # TODO: add/plan a check for this optimisation to make sure results make sense
-
+        # TODO: add a validation test for this optimisation
         df['Load with battery'] = battery_data['Load with battery'].copy()
 
         m.clear()
