@@ -1,12 +1,14 @@
 import os
 import functools
+import logging
 
 import ipywidgets as widgets
 from IPython.display import display, HTML
 from nemosis import static_table
 
-from ppa_analysis import helper_functions, advanced_settings, import_gen_data
+from ppa_analysis import helper_functions, advanced_settings, import_data
 
+logging.getLogger("nemosis").setLevel(logging.WARNING)
 
 def launch_input_collector():
 
@@ -65,7 +67,7 @@ def launch_input_collector():
         year = input_collector['year'].value
         gen_data_file = advanced_settings.YEARLY_DATA_CACHE / f"gen_data_{year}.parquet"
         gen_regions = [input_collector['generator_region'].value]
-        gen_options = import_gen_data.get_generator_options(gen_data_file, gen_regions)
+        gen_options = import_data.get_generator_options(gen_data_file, gen_regions)
         return gen_options
 
     gen_options = get_generator_options()
