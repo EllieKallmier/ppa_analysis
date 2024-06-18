@@ -112,7 +112,7 @@ def launch_input_collector():
         disabled=False,
     )
     display(input_collector['firming_contract_type'])
-    
+
     input_collector['settlement_period'] = widgets.Dropdown(
         options=advanced_settings.SETTLEMENT_PERIODS,
         value=advanced_settings.SETTLEMENT_PERIODS[0],
@@ -120,7 +120,7 @@ def launch_input_collector():
         disabled=False,
     )
     display(input_collector['settlement_period'])
-    
+
     input_collector['contract_amount'] = widgets.BoundedFloatText(
         value=100.0,
         min=0,
@@ -231,7 +231,7 @@ def launch_input_collector():
 
     input_collector['exposure_lower_bound'] = widgets.FloatText(
         value=20.0,
-        description='Exposure upper bound ($/MW/h):',
+        description='Exposure lower bound ($/MW/h):',
     )
     display(input_collector['exposure_lower_bound'])
 
@@ -257,6 +257,7 @@ def launch_input_collector():
     display(input_collector['generator_data_set'])
 
     return input_collector
+
 
 def get_unit_capcity(unit):
     duid = unit.split(':')[0]
@@ -360,3 +361,39 @@ def launch_generator_data_editor(input_collector):
         names='value'
     )
     return generator_data_editor
+
+
+def launch_battery_input_collector():
+
+    display(HTML(
+        '''
+        <style>
+        .widget-label { min-width: 30ex !important; }
+        .widget-select select { min-width: 70ex !important; }
+        .widget-dropdown select { min-width: 70ex !important; }
+        .widget-floattext input { min-width: 70ex !important; }
+        </style>
+        '''
+    ))
+
+    display(HTML(
+        '''
+        <h3>Battery inputs:</h3>
+        '''
+    ))
+
+    battery_input_collector = {}
+
+    battery_input_collector['rated_power_capacity'] = widgets.FloatText(
+        value=1.0,
+        description='Rated power capacity (MW):',
+    )
+    display(battery_input_collector['rated_power_capacity'])
+
+    battery_input_collector['size_in_mwh'] = widgets.FloatText(
+        value=2.0,
+        description='Battery size (MWh):',
+    )
+    display(battery_input_collector['size_in_mwh'])
+
+    return battery_input_collector

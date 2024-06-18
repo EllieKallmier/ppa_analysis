@@ -75,8 +75,6 @@ def choose_firming_type(
         'Retail' : retail_tariff_contract
     }
 
-    # TODO: consider how to dynamically collect inputs - or do they all just 
-    # take the same inputs but some are obsolete?
     df = firming_price_traces[firming_type](df, regions, upper_bound, lower_bound, tariff_details)
 
     return df.copy()

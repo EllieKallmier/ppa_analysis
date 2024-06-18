@@ -315,6 +315,7 @@ def calculate_shortfall(
         volume['Shortfall'] *= shortfall_penalty  # IF the seller contracts other "Replacement Energy" - set shortfall penalty to zero.
         df_resamp = volume.resample(settlement_period).sum(numeric_only=True).copy()
 
+
     else:
         # 24/7 PPA shortfall is based on the match % (CFE score) - if actual match < contracted % on average in each
         # period, penalty applies to the missing %
@@ -375,10 +376,8 @@ def calculate_lgcs(
 
     # Volume difference tells how much under/over the amount of contracted load the generation in this period is
     # The handling of these values depends on the PPA type!
-    df_to_check['LGC Undersupply'] = np.where(df_to_check['Volume Difference'] > 0, df_to_check['Volume Difference'],
-                                              0.0)
-    df_to_check['LGC Oversupply'] = np.where(df_to_check['Volume Difference'] < 0, df_to_check['Volume Difference'],
-                                             0.0)
+    df_to_check['LGC Undersupply'] = np.where(df_to_check['Volume Difference'] > 0, df_to_check['Volume Difference'],0.0)
+    df_to_check['LGC Oversupply'] = np.where(df_to_check['Volume Difference'] < 0, df_to_check['Volume Difference'],0.0)
 
     df_to_check['LGC Undersupply'] *= lgc_buy_price
     df_to_check['LGC Oversupply'] *= lgc_sell_price
@@ -502,8 +501,29 @@ def calculate_bill(
                                                      guaranteed_percent)
     results['Shortfall Payments Received'] = -1 * shortfall_payment_received['Shortfall']
 
-    results['Total'] = results.sum(axis='columns')
+    results['Total'] = results[['PPA Value', 'Firming Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received']].sum(axis='columns')
 
     return results
 
-# calculate_bill(combined_data_firming, 'Y', '24/7', LOAD_REGION, strike_price=124, lgc_buy_price=35, lgc_sell_price=20, shortfall_penalty=25, guaranteed_percent=85, excess_price=65, indexation=1, index_period='Y', floor_price=0)
+
+# Function to calculate a hypothetical bill under total wholesale exposure, with
+# no PPA or firming arrangements.
+# Includes wholesale purchase of LGCs for equivalent 'annual matching'
+# Assumes LGC prices have been given?
+def calculate_wholesale_bill(
+        df:pd.DataFrame,
+        settlement_period:str,
+        load_region:str,
+        lgc_buy_price:float=0.0,
+) -> pd.DataFrame:
+    data = df.copy()
+    data['Wholesale Cost'] = data[f'RRP: {load_region}'] * data['Load']
+
+    wholesale_bill = data[['Load', 'Wholesale Cost']].resample(settlement_period)\
+        .sum(numeric_only=True)
+
+    wholesale_bill['LGC Cost'] = wholesale_bill['Load'] * lgc_buy_price
+    wholesale_bill['Total'] = wholesale_bill['LGC Cost'] + wholesale_bill['Wholesale Cost']
+    wholesale_bill = wholesale_bill[['Wholesale Cost', 'LGC Cost', 'Total']]
+
+    return wholesale_bill
