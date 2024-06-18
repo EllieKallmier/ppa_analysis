@@ -764,6 +764,6 @@ def create_hybrid_generation(
     }
 
     df_with_hybrid = opt_hybrid_funcs[contract_type](
-        contracted_amount, time_series_data, region, generator_info, redef_period, percentile_val)
+        contracted_amount, time_series_data, region, generator_info, redef_period, interval, percentile_val)
 
     return df_with_hybrid
