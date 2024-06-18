@@ -416,7 +416,6 @@ def hybrid_baseload(
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
-        total_sum=first_year_load.sum(numeric_only=True)
         total_sum=first_year_load.sum(numeric_only=True),
         # cfe_score_min=0.9
         # consider adding here a cfe_score_min to enfore a penalty on meeting the contracted trace...
