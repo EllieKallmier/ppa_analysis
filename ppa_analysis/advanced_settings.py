@@ -3,10 +3,11 @@ This module defines the settings used by the user interface notebook and the ass
 the interface. The average user will probably not need to modify these settings but a more advance user who wishes to
 modify the interface functionality may need to.
 
-Two main types of settings are defined here:
+Three main types of settings are defined here:
 
 1. Path settings that specify where different datasets are stored.
 2. Options settings that define which options are available for users to select through the interface.
+3. Optimisation parameters
 
 """
 from pathlib import Path
@@ -74,3 +75,11 @@ GEN_COST_DATA = {
         }
     }
 }
+
+# Optimisation parameters
+
+# The penalty (in $/MWh) for oversupplying energy.
+OVERSUPPLY_PENALTY = 1000
+
+# The penalty (in $/MWh) for undersupplying energy (where an undersupply is less than the total_sum * unmet_cfe_score)
+UNDERSUPPLY_PENALTY = 16600.0

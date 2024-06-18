@@ -1,6 +1,48 @@
 import pandas as pd
 import numpy as np
 
+"""
+Module containing functions for calculating the components of bills associated with PPA contracts. The functionality is
+primarily intend to be used through the function calculate_bill, although the other functions are also public if a user
+wishes to utilise them. 
+
+Examples:
+
+Generally the data for calculating a PPA bill would be continuous data covering the period of a year, but to
+demonstrate the use of monthly settlement period we will use data with two interval from January and February.
+
+>>> volume_and_price = pd.DataFrame({
+... 'datetime': ['2023/01/01 00:30:00', '2023/01/01 01:00:00', '2023/02/01 00:30:00', '2023/02/01 01:00:00'],
+... 'Load': [100.0, 100.0, 100.0, 100.0],
+... 'Contracted Energy': [100.0, 100.0, 80.0, 80.0],
+... 'RRP: NSW1': [50.0, 50.0, 50.0, 50.0],
+... 'Firming price: NSW1': [80.0, 80.0, 80.0, 80.0]
+... })
+>>> volume_and_price['datetime'] = pd.to_datetime(volume_and_price['datetime'])
+>>> volume_and_price = volume_and_price.set_index(keys='datetime', drop=True)
+
+>>> calculate_bill(
+... volume_and_price=volume_and_price,
+... settlement_period='M',
+... contract_type='Pay as Produced',
+... load_region="NSW1",
+... strike_price=75.0,
+... lgc_buy_price=10.0,
+... lgc_sell_price=10.0,
+... shortfall_penalty=50.0,
+... guaranteed_percent=90.0,
+... excess_price='Wholesale',
+... indexation=1.0,
+... index_period='Y',
+... floor_price= -1000.0)
+            PPA Value  PPA Settlement  ...  Shortfall Payments Received    Total
+datetime                               ...
+2023-01-31    15150.0          5150.0  ...                         -0.0  20100.0
+2023-02-28    12120.0          4120.0  ...                      -1000.0  18640.0
+<BLANKLINE>
+[2 rows x 8 columns]
+"""
+
 
 def yearly_indexation(
         df: pd.DataFrame,
@@ -19,7 +61,7 @@ def yearly_indexation(
     :param df: with datetime index
     :param strike_price: in $/MW/h
     :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return:
+    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
     """
 
     years = df.index.year.unique()
@@ -65,7 +107,7 @@ def quarterly_indexation(
     :param df: with datetime index
     :param strike_price: in $/MWh
     :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return:
+    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
     """
 
     years = df.index.year.unique()
@@ -98,9 +140,8 @@ def quarterly_indexation(
     return df_with_strike_price['Strike Price (Indexed)']
 
 
-# Functions to calculate the PPA cost outcomes under each contract type:
 def calculate_ppa(
-        df: pd.DataFrame,
+        price_and_load: pd.DataFrame,
         load_region: str,
         strike_price: float,
         settlement_period: str,
@@ -109,15 +150,14 @@ def calculate_ppa(
         floor_price: float = -1000.0,  # default value is market floor
 ) -> pd.DataFrame:
     """
-    Calculates the cost associated with the settlement of the PPA contract for difference. Indexation is applied to
-    the strike price, and the floor price is applied to the wholesale spot price before the settlement. Results are
-    returned in a dataframe on settlement period basis with the index specifying the start of settlement period and
-    the column 'PPA Settlement' specifying the cost of the PPA, the total energy traded through the contract through
-    each period is provided in the column 'Contracted Energy' and the value of contracted energy at the indexed PPA
-    strike price is provided in the column 'PPA Value'.
+    Calculates the cost associated with the settlement of the PPA contract for difference.
 
-    :param df: Dataframe with datetime index, a column specifying the wholesale spot price in the load region (
-        name formated like RRP: NSW1), and a column specifying the contracted energy name 'Contracted Energy'.
+    Before settlement is calculated indexation is applied to the strike price, and the floor price is applied to the
+    wholesale spot price(i.e. where the wholesale price is lower than the floor price the wholesale price is set to the
+    floor price).
+
+    :param price_and_load: Dataframe with datetime index, a column specifying the wholesale spot price in the load
+        region (name formatted like RRP: NSW1), and a column specifying the contracted energy name 'Contracted Energy'.
     :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
     :param strike_price: The strike price of the contract in $/MWh
     :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
@@ -126,29 +166,61 @@ def calculate_ppa(
     :param index_period: How frequently to index the strike price as a st. 'Y' for yearly or 'Q' for quarterly.
     :param floor_price: Minimum wholesale price to use for settlement calculation i.e. for each interval the minimum of
         the floor_price and the wholesale price is taken, and then the resulting price is used to calculate settlement.
-    :return:
+    :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
+        the settlement period and the column 'PPA Settlement' specifying the cost of the PPA, the total energy traded
+        through the contract through each period is provided in the column 'Contracted Energy' and the value of
+        contracted energy at the indexed PPA strike price is provided in the column 'PPA Value'.
     """
 
     # add indexed strike_price column to df:
     indexation_calc = {'Y': yearly_indexation, 'Q': quarterly_indexation}
-    strike_prices_indexed = indexation_calc[index_period](df, strike_price, indexation)
+    strike_prices_indexed = indexation_calc[index_period](price_and_load, strike_price, indexation)
 
-    df['Strike Price (Indexed)'] = strike_prices_indexed.copy()
+    price_and_load['Strike Price (Indexed)'] = strike_prices_indexed.copy()
 
     # settle around the contracted energy: strike_price - max(RRP, floor_price)
-    df['Price'] = (df['Strike Price (Indexed)'] - np.maximum(df[f'RRP: {load_region}'], floor_price))
-    df['PPA Settlement'] = df['Contracted Energy'] * (
-                df['Strike Price (Indexed)'] - np.maximum(df[f'RRP: {load_region}'], floor_price))
-    df['PPA Value'] = df['Strike Price (Indexed)'] * df['Contracted Energy']
+    price_and_load['Price'] = (price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load[f'RRP: {load_region}'], floor_price))
+    price_and_load['PPA Settlement'] = price_and_load['Contracted Energy'] * (
+            price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load[f'RRP: {load_region}'], floor_price))
+    price_and_load['PPA Value'] = price_and_load['Strike Price (Indexed)'] * price_and_load['Contracted Energy']
 
-    df_resamp = df.resample(settlement_period).sum(numeric_only=True).copy()
+    df_resamp = price_and_load.resample(settlement_period).sum(numeric_only=True).copy()
 
     return df_resamp
 
 
-# Returns a TIMESERIES df
+def calculate_firming(
+        volume_and_price: pd.DataFrame,
+        settlement_period: str,
+        load_region:str
+) -> pd.DataFrame:
+    """
+    Calculates the cost associated with buying energy not provided through the PPA.
+
+    Firming energy required is calculated on an interval by interval basis as the difference between the 'Load' and the
+    'Contracted Energy' multiplied the 'Firming Costs'. Note firming costs are only applied intervals where the load
+    is greater than the contracted energy.
+
+    :param volume_and_price: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
+        a column specifying the contracted energy (MWh) name 'Contracted Energy', and a column specifying the firming
+        price ($/MWh) (name formatted like 'Firming price: NSW1').
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+        for quarterly and 'M' for monthly.
+    :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
+    :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
+        the settlement period and the column 'Firming Costs' specifying the cost of the firming energy, and a column
+        called 'Unmatched Energy' specifying the volume of firming energy procured.
+    """
+
+    firming_costs = volume_and_price.copy()
+    firming_costs['Unmatched Energy'] = (firming_costs['Load'] - firming_costs['Contracted Energy']).clip(lower=0.0)
+    firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs[f'Firming price: {load_region}']
+    firming_costs = firming_costs.resample(settlement_period).sum(numeric_only=True)
+    return firming_costs
+
+
 def calculate_excess_electricity(
-        df: pd.DataFrame,
+        load_contracted_volume: pd.DataFrame,
         load_region: str,
         settlement_period: str,
         excess_price: float | str = 'Wholesale'  # need to validate this input
@@ -156,13 +228,21 @@ def calculate_excess_electricity(
     """
     Calculates the contracted energy in excess of the load and the value of this energy.
 
-    :param df:
-    :param load_region:
-    :param settlement_period:
-    :param excess_price:
-    :return:
-    """
+    The excess energy is calculated on an interval by interval basis and then summed across each settlement period.
 
+    :param load_contracted_volume: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
+    a column specifying the contracted energy (MWh) name 'Contracted Energy', if the excess_price is calculated using
+    the wholesale spot price (by specifying excess_price='Wholesale') then a column specifying the wholesale spot price
+    ($/MWh) is also required (formatted like 'RRP: NSW1').
+    :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+        for quarterly and 'M' for monthly.
+    :param excess_price: a float specifying the price for excess energy in $/MWh or string ('Wholesale') specifying
+        that the wholesale spot price should be used to calculate the value of the excess energy.
+    :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
+        the settlement period and additional columns 'Excess Energy' (MWh), 'Excess Energy Revenue' ($). All columns
+        contain values summed across the settlement period.
+    """
 
     # then selling any excess energy (contracted, but not used by the buyer) - keeping LGCs associated if bundled!!!
     # excess price is determined as either wholesale prices or a fixed price.
@@ -170,33 +250,60 @@ def calculate_excess_electricity(
         raise ValueError('excess_price should be one of "Wholesale" or a float representing the fixed on-sell price.')
 
     if excess_price == 'Wholesale':
-        df['Excess Price'] = df[f'RRP: {load_region}'].copy()
+        load_contracted_volume['Excess Price'] = load_contracted_volume[f'RRP: {load_region}'].copy()
     else:
-        df['Excess Price'] = excess_price
+        load_contracted_volume['Excess Price'] = excess_price
 
-    df['Excess Energy'] = (df['Contracted Energy'] - df['Load']).clip(lower=0.0)
-    df['Excess Energy Revenue'] = df['Excess Energy'] * df['Excess Price']
+    load_contracted_volume['Excess Energy'] = (load_contracted_volume['Contracted Energy'] -
+                                               load_contracted_volume['Load']).clip(lower=0.0)
+    load_contracted_volume['Excess Energy Revenue'] = (load_contracted_volume['Excess Energy'] *
+                                                       load_contracted_volume['Excess Price'])
 
-    df_resamp = df.resample(settlement_period).sum(numeric_only=True).copy()
+    resampled = load_contracted_volume.resample(settlement_period).sum(numeric_only=True).copy()
 
-    return df_resamp
+    return resampled
 
 
-# Returns a RESAMPLED DF to the settlement period: not interval timeseries data
 def calculate_shortfall(
-        df: pd.DataFrame,
+        volume: pd.DataFrame,
         settlement_period: str,
         contract_type: str,
-        shortfall_penalty: float,  # Penalty to be paid for shortfall energy - "shortfall damages"
-        guaranteed_percent: float,  # A percentage of load in each settlement period to contract.
+        shortfall_penalty: float,
+        guaranteed_percent: float,
 ) -> pd.DataFrame:
+    """
+    Calculates the total penalty associated with an energy shortfall on a settlement period basis.
+
+    For 'Pay as Produced' and 'Pay as Consumed' contracts, the shortfall is calculated as the difference between the
+    guaranteed percentage of the load and the contracted energy. For 'Baseload' and 'Shaped', the shortfall is
+    calculated as difference between the 'Hybrid' (combined renewable energy generator profiles) and
+    the 'Contracted Energy'. For '24/7' contracts the percentage of load covered by the contracted energy is calculated
+    on an interval by interval basis (matching percentage), and then the mean of the percentage is taken on a settlement
+    period basis. A shortfall percentage is then calculated as the difference between the guaranteed_percentage and the
+    average monthly matching percentage, with the shortfall volume then calculated as the shortfall percentage
+    multiplied by the settlement period load. Shortfalls cannot be negative for a settlement period for any contract
+    types.
+
+    :param volume: Dataframe with datetime index, the columns 'Load' and 'Contracted Energy', if a contract_type of
+        'Baseload' or 'Shaped' is specified then a column 'Hybrid' is also required.
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+        for quarterly and 'M' for monthly.
+    :param contract_type: 
+    :param shortfall_penalty: a float specifying the penalty for a shortfall in $/MWh
+    :param guaranteed_percent: a float specifying the percentage of load in each settlement period to guaranteed to be
+        met by the contract. Should be a number between 0 - 100.
+    :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
+        the settlement period and an additional column 'Shortfall' specifying the total shortfall penalty in $.
+    """
+
+
     allowed_periods = {'Y', 'Q', 'M'}
     if settlement_period not in allowed_periods:
         raise ValueError(f'settlement_period should be one of {allowed_periods}.')
 
     # resample to each period
     # find the difference between contracted amount and delivered amount in each period
-    df_resamp = df.resample(settlement_period).sum(numeric_only=True).copy()
+    df_resamp = volume.resample(settlement_period).sum(numeric_only=True).copy()
 
     if contract_type in ['Pay as Produced', 'Pay as Consumed']:
         df_resamp['Guaranteed Energy'] = df_resamp['Load'] * guaranteed_percent / 100
@@ -204,14 +311,14 @@ def calculate_shortfall(
         df_resamp['Shortfall'] *= shortfall_penalty
 
     elif contract_type in ['Baseload', 'Shaped']:
-        df['Shortfall'] = (df['Contracted Energy'] - df['Hybrid']).clip(lower=0.0)
-        df[
-            'Shortfall'] *= shortfall_penalty  # IF the seller contracts other "Replacement Energy" - set shortfall penalty to zero.
-        df_resamp = df.resample(settlement_period).sum(numeric_only=True).copy()
+        volume['Shortfall'] = (volume['Contracted Energy'] - volume['Hybrid']).clip(lower=0.0)
+        volume['Shortfall'] *= shortfall_penalty  # IF the seller contracts other "Replacement Energy" - set shortfall penalty to zero.
+        df_resamp = volume.resample(settlement_period).sum(numeric_only=True).copy()
 
     else:
-        # 24/7 PPA shortfall is based on the match % (CFE score) - if actual match < contracted % on average in each period, penalty applies to the missing %
-        df_resamp_247 = df.copy()
+        # 24/7 PPA shortfall is based on the match % (CFE score) - if actual match < contracted % on average in each
+        # period, penalty applies to the missing %
+        df_resamp_247 = volume.copy()
         df_resamp_247['Match %'] = 0
         df_resamp_247['Match %'] = np.where(df_resamp_247['Load'] == 0, 100,
                                             np.minimum(df_resamp_247['Contracted Energy'] / df_resamp_247['Load'] * 100,
@@ -225,26 +332,46 @@ def calculate_shortfall(
     return df_resamp
 
 
-# Returns RESAMPLED df to settlement period.
 def calculate_lgcs(
-        df: pd.DataFrame,
+        volume: pd.DataFrame,
         settlement_period: str,
         lgc_buy_price: float,
         lgc_sell_price: float,
         guaranteed_percent: float
 ) -> pd.DataFrame:
+    """
+    Calculates the cost of buying LGCs if they are under supplied and the revenue from selling if they are oversupplied.
+
+    The difference between the expected LGCs based on the guaranteed percent of load to be met by the contract and the
+    actual volume supplied ('Contracted Energy') is calculated on a settlement period basis. Where the volume exceeds
+    the guaranteed volume an excess of LGCs is produced and the oversupply revenue is calculated, where the volume is
+    less than the guaranteed volume there is a deficit of LGCs and the cost of buying LGCs to meet the deficit is
+    calculated.
+
+    :param volume: Dataframe with datetime index, the columns 'Load' (MWh) and 'Contracted Energy' (MWh).
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+        for quarterly and 'M' for monthly.
+    :param lgc_buy_price: a float specifying the price ($/MWh) of buying LCGs to meet a deficit.
+    :param lgc_sell_price: a float specifying the price ($/MWh) at which excess LCGs can be sold.
+    :param guaranteed_percent: a float specifying the percentage of load in each settlement period to guaranteed to be
+        met by the contract. Should be a number between 0 - 100.
+    :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
+        the settlement period and an additional column 'LGC Oversupply' specifying the revenue from selling excess
+        LGCs and a column 'LGC Undersupply' specifying the cost of buying LGCs to meet a deficit.
+    """
+
     allowed_periods = {'Y', 'Q', 'M'}
     if settlement_period not in allowed_periods:
         raise ValueError(f'settlement_period should be one of {allowed_periods}.')
 
-    df_to_check = df[['Load', 'Contracted Energy']].copy()
+    df_to_check = volume[['Load', 'Contracted Energy']].copy()
 
     # Find the short and long positions for each settlement period - this informs
     # the need for penalties, purchases or sales.
     # Note: checking against the contract
     df_to_check = df_to_check.resample(settlement_period).sum(numeric_only=True)
-    df_to_check['Volume Difference'] = df_to_check['Load'] * (guaranteed_percent / 100) - df_to_check[
-        'Contracted Energy']
+    df_to_check['Volume Difference'] = (df_to_check['Load'] * (guaranteed_percent / 100) -
+                                        df_to_check['Contracted Energy'])
 
     # Volume difference tells how much under/over the amount of contracted load the generation in this period is
     # The handling of these values depends on the PPA type!
@@ -260,7 +387,7 @@ def calculate_lgcs(
 
 
 def calculate_bill(
-        df: pd.DataFrame,
+        volume_and_price: pd.DataFrame,
         settlement_period: str,
         contract_type: str,
         load_region: str,
@@ -275,40 +402,103 @@ def calculate_bill(
         index_period: str = 'Y',  # and default period is yearly for slightly faster calcs just in case
         floor_price: float = -1000.0,  # default value is market floor
 ) -> pd.DataFrame:
-    # put everything together here:
-    # 1. PPA settlement costs
-    # 2. Firming costs
-    # 3. Revenue from on-sold excess RE
-    # 4. Purchase of extra LGCs
-    # 5. Sale of excess LGCs
-    # 6. Any shortfall penalty payments for LGCs or generation
+    """
+    Calculates the components of the bills associated with a PPA contract.
 
+    Costs are calculated for each component as per the documentation for corresponding function in this module:
+        1. PPA settlement costs: calculate_ppa
+        2. Firming costs: calculate_firming
+        3. Revenue from on-sold excess RE: calculate_excess_electricity
+        4. Purchase of extra LGCs: calculate_lgcs
+        5. Sale of excess LGCs: calculate_lgcs
+        6. Any shortfall penalty payments for generation: calculate_shortfall
+
+    Examples:
+
+    Generally the data for calculating a PPA bill would be continuous data covering the period of a year, but to
+    demonstrate the use of monthly settlement period we will use data with two interval from January and February.
+
+    >>> volume_and_price = pd.DataFrame({
+    ... 'datetime': ['2023/01/01 00:30:00', '2023/01/01 01:00:00', '2023/02/01 00:30:00', '2023/02/01 01:00:00'],
+    ... 'Load': [100.0, 100.0, 100.0, 100.0],
+    ... 'Contracted Energy': [100.0, 100.0, 80.0, 80.0],
+    ... 'RRP: NSW1': [50.0, 50.0, 50.0, 50.0],
+    ... 'Firming price: NSW1': [80.0, 80.0, 80.0, 80.0]
+    ... })
+    >>> volume_and_price['datetime'] = pd.to_datetime(volume_and_price['datetime'])
+    >>> volume_and_price = volume_and_price.set_index(keys='datetime', drop=True)
+
+    >>> calculate_bill(
+    ... volume_and_price=volume_and_price,
+    ... settlement_period='M',
+    ... contract_type='Pay as Produced',
+    ... load_region="NSW1",
+    ... strike_price=75.0,
+    ... lgc_buy_price=10.0,
+    ... lgc_sell_price=10.0,
+    ... shortfall_penalty=50.0,
+    ... guaranteed_percent=90.0,
+    ... excess_price='Wholesale',
+    ... indexation=1.0,
+    ... index_period='Y',
+    ... floor_price= -1000.0)
+                PPA Value  PPA Settlement  ...  Shortfall Payments Received    Total
+    datetime                               ...
+    2023-01-31    15150.0          5150.0  ...                         -0.0  20100.0
+    2023-02-28    12120.0          4120.0  ...                      -1000.0  18640.0
+    <BLANKLINE>
+    [2 rows x 8 columns]
+
+    :param volume_and_price: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
+        a column specifying the contracted energy (MWh) name 'Contracted Energy', a column specifying the wholesale
+        spot price ($/MWh) (formatted like 'RRP: NSW1'), a column specifying the firming price ($/MWh)
+        (formatted like 'Firming price: NSW1'), and a column specifying the combined renewable energy
+        generation profiles named 'Hybrid' if a contract_type of 'Baseload' or 'Shaped' is specified.
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+        for quarterly and 'M' for monthly.
+    :param contract_type:
+    :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
+    :param strike_price: The strike price of the contract in $/MWh
+    :param lgc_buy_price: a float specifying the price ($/MWh) of buying LCGs to meet a deficit.
+    :param lgc_sell_price: a float specifying the price ($/MWh) at which excess LCGs can be sold.
+    :param shortfall_penalty:
+    :param guaranteed_percent: a float specifying the percentage of load in each settlement period to guaranteed to be
+        met by the contract. Should be a number between 0 - 100.
+    :param excess_price: a float specifying the price for excess energy in $/MWh or string ('Wholesale') specifying
+        that the wholesale spot price should be used to calculate the value of the excess energy.
+    :param indexation:
+    :param index_period: How frequently to index the strike price as a st. 'Y' for yearly or 'Q' for quarterly.
+    :param floor_price: Minimum wholesale price to use for settlement calculation i.e. for each interval the minimum of
+        the floor_price and the wholesale price is taken, and then the resulting price is used to calculate settlement.
+    :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
+        the settlement period and an additional columns: 'PPA Value' (value of
+        contracted energy at the indexed PPA strike price), 'PPA Settlement' (the cost of settling the PPA),
+        'Firming Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs',
+        'Shortfall Payments Received', 'Total'.
+    """
     results = pd.DataFrame()
 
     # 1. PPA settlement costs:
-    ppa_costs = calculate_ppa(df, load_region, strike_price, settlement_period, indexation, index_period, floor_price)
+    ppa_costs = calculate_ppa(volume_and_price, load_region, strike_price, settlement_period, indexation, index_period,
+                              floor_price)
     results['PPA Value'] = ppa_costs['PPA Value'].copy()
     results['PPA Settlement'] = ppa_costs['PPA Settlement'].copy()
 
-    # 2. Firming costs: TODO: call FIRMING_FUNCTION here!!!
-    firming_costs = df.copy()
-    firming_costs['Unmatched Energy'] = (firming_costs['Load'] - firming_costs['Contracted Energy']).clip(lower=0.0)
-    firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs[f'Firming price: {load_region}']
-    firming_costs = firming_costs.resample(settlement_period).sum(numeric_only=True)
-
+    # 2. Firming costs:
+    firming_costs = calculate_firming(volume_and_price, settlement_period, load_region)
     results['Firming Costs'] = firming_costs['Firming Costs'].copy()
 
     # 3. Revenue from on-sold excess RE:
-    excess_val = calculate_excess_electricity(df, load_region, settlement_period, excess_price)
+    excess_val = calculate_excess_electricity(volume_and_price, load_region, settlement_period, excess_price)
     results['Revenue from on-sold RE'] = -1 * excess_val['Excess Energy Revenue'].copy()
 
     # 4. and 5. Revenue/Cost of LGCs
-    lgc_balance = calculate_lgcs(df, settlement_period, lgc_buy_price, lgc_sell_price, guaranteed_percent)
+    lgc_balance = calculate_lgcs(volume_and_price, settlement_period, lgc_buy_price, lgc_sell_price, guaranteed_percent)
     results['Revenue from excess LGCs'] = lgc_balance['LGC Oversupply'].copy()
     results['Cost of shortfall LGCs'] = lgc_balance['LGC Undersupply'].copy()
 
     # 6. Shortfall payments for energy - applied based on contract type.
-    shortfall_payment_received = calculate_shortfall(df, settlement_period, contract_type, shortfall_penalty,
+    shortfall_payment_received = calculate_shortfall(volume_and_price, settlement_period, contract_type, shortfall_penalty,
                                                      guaranteed_percent)
     results['Shortfall Payments Received'] = -1 * shortfall_payment_received['Shortfall']
 
