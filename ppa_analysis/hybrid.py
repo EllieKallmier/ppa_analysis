@@ -200,6 +200,7 @@ def hybrid_shaped(
         region:str,
         generator_info:dict[str:float],
         redef_period:str,
+        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -324,6 +325,7 @@ def hybrid_baseload(
         region:str,
         generator_info:dict[str:float],
         redef_period:str,
+        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -438,6 +440,7 @@ def hybrid_247(
         region:str,
         generator_info:dict[str:float],
         redef_period:str,
+        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -522,6 +525,7 @@ def hybrid_pap(
         region:str,
         generator_info:dict[str:float],
         redef_period:str,
+        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -607,6 +611,7 @@ def hybrid_pac(
         region: str,
         generator_info: dict[str:float],
         redef_period: str,
+        interval:str,
         percentile_val: float
 ) -> pd.DataFrame:
     """
@@ -692,6 +697,7 @@ def create_hybrid_generation(
         time_series_data:pd.DataFrame,
         region:str,
         generator_info:dict[str:float],
+        interval:str, # time interval in minutes that data is currently in
         percentile_val:float
 ) -> pd.DataFrame:
     """
