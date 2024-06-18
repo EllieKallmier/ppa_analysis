@@ -84,7 +84,7 @@ def run_hybrid_optimisation(
     if cfe_score_min is not None:
         # market price cap to use as penalty for an unmet CFE score - meeting this score is a priority for sellers
         # to mitigate risk
-        penalty_247 = advanced_settings.UNDERSUPPLY_PENALTY
+        unmatched_penalty = advanced_settings.UNDERSUPPLY_PENALTY
     else:
         unmatched_penalty = 0.0
 
@@ -118,7 +118,7 @@ def run_hybrid_optimisation(
               xsum(gen_data_series[str(g)][r] * percent_of_generation[str(g)] * lcoe[str(g)] for g in G))
              for r in R)
         + oversupply_flip_var * advanced_settings.OVERSUPPLY_PENALTY
-        + penalty_247 * unmet_cfe_score
+        + unmatched_penalty * unmet_cfe_score
     )
 
     # Add to hybrid_gen_sum variable by adding together each generation trace by the percentage variable
@@ -137,7 +137,9 @@ def run_hybrid_optimisation(
     # Set the oversupply variable: multiplied by market floor this disincentivises
     # overcontracting unless specified directly.
     m += oversupply_flip_var >= xsum(hybrid_gen_sum[r] for r in R) - total_sum
-    m += unmet_cfe_score >= xsum(unmatched[r] for r in R) - (1 - cfe_score_min) * total_sum
+
+    if cfe_score_min is not None:
+        m += unmet_cfe_score >= xsum(unmatched[r] for r in R) - (1 - cfe_score_min) * total_sum
     
     m.verbose = 0
     status = m.optimize()
