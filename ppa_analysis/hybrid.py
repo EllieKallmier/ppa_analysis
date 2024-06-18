@@ -26,8 +26,7 @@ def run_hybrid_optimisation(
         generation_data: pd.DataFrame,
         gen_costs: dict[str:float],
         total_sum: float,
-        contract_type: str,
-        cfe_score_min: float = 0.0,
+        cfe_score_min: float = None,
 ) -> tuple[pd.Series, dict[str:dict[str:float]]]:
     """
     Calculates an optimal mix of volume to contract from a set of renewable energy generators.
@@ -52,12 +51,10 @@ def run_hybrid_optimisation(
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param total_sum: float, used to place a constraint on the optimisation such that total energy from the generators
         must be greater than or equal to total_sum.
-    :param contract_type: the contract type as a string, only used to determine if cfe_score_min is used to apply
-        a penalty for undersupply.
     :param cfe_score_min: a float specifying the threshold at which the contract is considered to be under
-        supplied, as a percentage of total_sum, if combined generation is below this threshold the
+        supplied, as a percentage of total_sum (0.0-1.0), if combined generation is below this threshold the
         advanced_settings.UNDERSUPPLY_PENALTY applies in the optimisation objective function. Note this only applies
-        for contracts type '24/7' and for other contracts the penalty is not applied.
+        if a float rather than the default None is provided.
     :return: A pd.Series specifying the combined contracted profile from all generators and a dict specifying the
         fraction of each generator contracted and fraction of the total energy contracted provided by each generator.
         Dict structure looks like:
@@ -84,7 +81,7 @@ def run_hybrid_optimisation(
     # (need 'some' price at all times otherwise 'unmatched' energy can get huge)
     wholesale_prices_vals = np.array(wholesale_prices.clip(lower=1.0).values)
 
-    if contract_type == '24/7':
+    if cfe_score_min is not None:
         # market price cap to use as penalty for an unmet CFE score - meeting this score is a priority for sellers
         # to mitigate risk
         penalty_247 = advanced_settings.UNDERSUPPLY_PENALTY
@@ -304,7 +301,6 @@ def hybrid_shaped(
         generation_data=shaped_first_year.copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
-        contract_type='Shaped'
     )
 
     hybrid_trace_whole_length = pd.DataFrame(columns=['DateTime'])
@@ -425,7 +421,6 @@ def hybrid_baseload(
     first_year = df.iloc[:24 * (365 + leap_year)].copy()
     
     hybrid_trace_series, percentages = run_hybrid_optimisation(
-        contract_type='Baseload',
         contracted_energy=first_year['Contracted Energy'].copy(),
         wholesale_prices=first_year[f'RRP: {region}'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
@@ -514,7 +509,6 @@ def hybrid_247(
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
-        contract_type='24/7',
         cfe_score_min=contracted_amount/100
     )
 
@@ -598,7 +592,6 @@ def hybrid_pap(
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
-        contract_type='Pay as Produced'
     )
 
     time_series_data['Hybrid'] = 0
@@ -681,7 +674,6 @@ def hybrid_pac(
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
-        contract_type='Pay as Consumed'
     )
 
     time_series_data['Hybrid'] = 0
