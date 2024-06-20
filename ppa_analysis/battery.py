@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from mip import Model, xsum, minimize, CONTINUOUS, BINARY, OptimizationStatus
 
+
 # TODO: add documentation!!
 def run_battery_optimisation(
         df:pd.DataFrame,
