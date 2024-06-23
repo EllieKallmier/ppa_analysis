@@ -9,5 +9,4 @@ CACHE
 .idea/*
 *results/
 *script_for_flex.py
-*hold.py
-get_load_and_weather_data.py
+*flow_notebook.ipynb
