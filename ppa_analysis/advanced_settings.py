@@ -78,6 +78,11 @@ GEN_COST_DATA = {
     }
 }
 
+TARIFF_STRUCTURE_TYPES = [
+    'Flat',
+    'Time of Use'
+]
+
 # Optimisation parameters
 
 # The penalty (in $/MWh) for oversupplying energy.
