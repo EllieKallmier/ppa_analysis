@@ -62,31 +62,42 @@ def retail_tariff_contract(
     #     'Fixed ($/day)': float,
     #     'Volume ($/MWh)': {
     #         'Type': str('Flat', 'ToU'),  # one of the two options
-    #         'Rate(s)': {
-    #             'Peak': {
-    #                 'Months':[],
-    #                 'Weekdays':[],
-    #                 'Hours':[],
+    #         'Components': {
+    #             '1' : {
+    #                 'Type': 'Peak/Shoulder/Off Peak',
+    #                 'Start Month':int,
+    #                 'End Month':int,
+    #                 'Start Weekday':int,
+    #                 'End Weekday':int,
+    #                 'Start Hour':int,
+    #                 'End Hour':int,
     #                 'Cost ($/MWh)':float
     #             },
-    #             'Shoulder':{
-    #                 'Months':[],
-    #                 'Weekdays':[],
-    #                 'Hours':[],
+    #             '2' : {
+    #                 'Type': 'Peak/Shoulder/Off Peak',
+    #                 'Start Month':int,
+    #                 'End Month':int,
+    #                 'Start Weekday':int,
+    #                 'End Weekday':int,
+    #                 'Start Hour':int,
+    #                 'End Hour':int,
     #                 'Cost ($/MWh)':float
     #             },
-    #             'Off Peak':{
-    #                 'Months':[],
-    #                 'Weekdays':[],
-    #                 'Hours':[],
+    #             '3' : {
+    #                 'Type': 'Peak/Shoulder/Off Peak',
+    #                 'Start Month':int,
+    #                 'End Month':int,
+    #                 'Start Weekday':int,
+    #                 'End Weekday':int,
+    #                 'Start Hour':int,
+    #                 'End Hour':int,
     #                 'Cost ($/MWh)':float
     #             },
     #             'Flat':float
     #         }
     #     }
     # }
-    
-    
+
     df['Tariff Rate ($/MWh)'] = 0.0
 
     # Average the fixed daily cost across each interval - then can sum the whole column to get the 
@@ -107,12 +118,12 @@ def retail_tariff_contract(
                 end_hour = value['End Hour']
                 cost = value['Cost ($/MWh)']
 
-                months = (((df.index.month >= start_month) & (df.index.month <= end_month)) | ((start_month > end_month) & ((df.index.month >= start_month) | (df.index.month <= end_month))))
-                days = ((df.index.weekday >= start_weekday-1) & (df.index.weekday <= end_weekday-1))
-                hours = (((df.index.hour >= start_hour) & (df.index.hour <= end_hour)) | ((start_hour > end_hour) & ((df.index.hour >= start_hour) | (df.index.hour <= end_hour))))
+                months = ((df.index.month <= start_month) & (df.index.month >= end_month))
+                days = ((df.index.weekday <= start_weekday) & (df.index.weekday <= end_weekday))
+                hours = ((df.index.hour <= start_hour) & (df.index.hour >= end_hour))
 
-                df.loc[(months & days & hours), 'Tariff Rate ($/MWh)'] = cost
-    
+                df[(months & days & hours)]['Tariff Rate ($/MWh)'] = cost
+
     return df
 
 
