@@ -169,7 +169,8 @@ def calculate_ppa(
     :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
         the settlement period and the column 'PPA Settlement' specifying the cost of the PPA, the total energy traded
         through the contract through each period is provided in the column 'Contracted Energy' and the value of
-        contracted energy at the indexed PPA strike price is provided in the column 'PPA Value'.
+        contracted energy at the indexed PPA strike price is provided in the column 'PPA Value'. The column labelled
+        'PPA Final Cost' contains the cost to the buyer after settlement of the contracted energy.
     """
 
     # add indexed strike_price column to df:
@@ -180,9 +181,12 @@ def calculate_ppa(
 
     # settle around the contracted energy: strike_price - max(RRP, floor_price)
     price_and_load['Price'] = (price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load[f'RRP: {load_region}'], floor_price))
+    price_and_load['Wholesale Cost'] = price_and_load['Contracted Energy'] * price_and_load[f'RRP: {load_region}']
     price_and_load['PPA Settlement'] = price_and_load['Contracted Energy'] * (
             price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load[f'RRP: {load_region}'], floor_price))
+    
     price_and_load['PPA Value'] = price_and_load['Strike Price (Indexed)'] * price_and_load['Contracted Energy']
+    price_and_load['PPA Final Cost'] = price_and_load[['Wholesale Cost', 'PPA Settlement']].sum(axis=1)
 
     df_resamp = price_and_load.resample(settlement_period).sum(numeric_only=True).copy()
 
@@ -203,7 +207,8 @@ def calculate_firming(
 
     :param volume_and_price: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
         a column specifying the contracted energy (MWh) name 'Contracted Energy', and a column specifying the firming
-        price ($/MWh) (name formatted like 'Firming price: NSW1').
+        price ($/MWh) (name formatted like 'Firming price: NSW1'). An optional column named 'Fixed ($/day)' can be 
+        passed if the firming type is retail tariff with a daily charge.
     :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
         for quarterly and 'M' for monthly.
     :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
@@ -216,6 +221,8 @@ def calculate_firming(
     firming_costs['Unmatched Energy'] = (firming_costs['Load'] - firming_costs['Contracted Energy']).clip(lower=0.0)
     firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs[f'Firming price: {load_region}']
     firming_costs = firming_costs.resample(settlement_period).sum(numeric_only=True)
+    if 'Fixed ($/day)' in firming_costs.columns:
+        firming_costs['Firming Costs'] = firming_costs[['Firming Costs', 'Fixed ($/day)']].sum(axis='columns')
     return firming_costs
 
 
@@ -385,6 +392,31 @@ def calculate_lgcs(
     return df_to_check
 
 
+# TODO: add docstring
+# Function to calculate a hypothetical bill under total wholesale exposure, with
+# no PPA or firming arrangements.
+# Includes wholesale purchase of LGCs for equivalent 'annual matching'
+# Assumes LGC prices have been given?
+def calculate_wholesale_bill(
+        df:pd.DataFrame,
+        settlement_period:str,
+        load_region:str,
+        lgc_buy_price:float=0.0,
+) -> pd.DataFrame:
+    data = df.copy()
+    data['Wholesale Cost'] = data[f'RRP: {load_region}'] * data['Load']
+
+    wholesale_bill = data[['Load', 'Wholesale Cost']].resample(settlement_period)\
+        .sum(numeric_only=True)
+
+    wholesale_bill['LGC Cost'] = wholesale_bill['Load'] * lgc_buy_price
+    wholesale_bill['Total'] = wholesale_bill['LGC Cost'] + wholesale_bill['Wholesale Cost']
+    wholesale_bill = wholesale_bill[['Wholesale Cost', 'LGC Cost', 'Total']]
+
+    return wholesale_bill
+
+
+
 def calculate_bill(
         volume_and_price: pd.DataFrame,
         settlement_period: str,
@@ -441,10 +473,10 @@ def calculate_bill(
     ... indexation=1.0,
     ... index_period='Y',
     ... floor_price= -1000.0)
-                PPA Value  PPA Settlement  ...  Shortfall Payments Received    Total
-    datetime                               ...
-    2023-01-31    15150.0          5150.0  ...                         -0.0  20100.0
-    2023-02-28    12120.0          4120.0  ...                      -1000.0  18640.0
+                Wholesale Cost  PPA Settlement  ...  Shortfall Payments Received    Total
+    datetime                                    ...
+    2023-01-31         15150.0          5150.0  ...                         -0.0  20100.0
+    2023-02-28         12120.0          4120.0  ...                      -1000.0  18640.0
     <BLANKLINE>
     [2 rows x 8 columns]
 
@@ -453,6 +485,7 @@ def calculate_bill(
         spot price ($/MWh) (formatted like 'RRP: NSW1'), a column specifying the firming price ($/MWh)
         (formatted like 'Firming price: NSW1'), and a column specifying the combined renewable energy
         generation profiles named 'Hybrid' if a contract_type of 'Baseload' or 'Shaped' is specified.
+        An optional column named 'Fixed ($/day)' can be passed if the firming type is retail tariff with a daily charge.
     :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
         for quarterly and 'M' for monthly.
     :param contract_type:
@@ -482,6 +515,7 @@ def calculate_bill(
                               floor_price)
     results['PPA Value'] = ppa_costs['PPA Value'].copy()
     results['PPA Settlement'] = ppa_costs['PPA Settlement'].copy()
+    results['PPA Final Cost'] = ppa_costs['PPA Final Cost'].copy()
 
     # 2. Firming costs:
     firming_costs = calculate_firming(volume_and_price, settlement_period, load_region)
@@ -501,29 +535,6 @@ def calculate_bill(
                                                      guaranteed_percent)
     results['Shortfall Payments Received'] = -1 * shortfall_payment_received['Shortfall']
 
-    results['Total'] = results[['PPA Value', 'Firming Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received']].sum(axis='columns')
+    results['Total'] = results[['PPA Final Cost', 'Firming Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received']].sum(axis='columns')
 
     return results
-
-
-# Function to calculate a hypothetical bill under total wholesale exposure, with
-# no PPA or firming arrangements.
-# Includes wholesale purchase of LGCs for equivalent 'annual matching'
-# Assumes LGC prices have been given?
-def calculate_wholesale_bill(
-        df:pd.DataFrame,
-        settlement_period:str,
-        load_region:str,
-        lgc_buy_price:float=0.0,
-) -> pd.DataFrame:
-    data = df.copy()
-    data['Wholesale Cost'] = data[f'RRP: {load_region}'] * data['Load']
-
-    wholesale_bill = data[['Load', 'Wholesale Cost']].resample(settlement_period)\
-        .sum(numeric_only=True)
-
-    wholesale_bill['LGC Cost'] = wholesale_bill['Load'] * lgc_buy_price
-    wholesale_bill['Total'] = wholesale_bill['LGC Cost'] + wholesale_bill['Wholesale Cost']
-    wholesale_bill = wholesale_bill[['Wholesale Cost', 'LGC Cost', 'Total']]
-
-    return wholesale_bill
