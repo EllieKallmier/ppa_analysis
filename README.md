@@ -55,6 +55,8 @@ Pyhton API.
 
 The [glossary](glossary.md) provides definitions of key terms including contract types.
 
+# Functionality overview
+
 # Acknowledgements
 
 Files msat_replicator.py, ppa.py, replicate_test.py, residuals.py, scenario_runner.py and tariffs.py were 

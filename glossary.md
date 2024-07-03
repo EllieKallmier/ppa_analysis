@@ -15,14 +15,16 @@ The five contract types the PPA Analysis tool functionality can handle are descr
 
 ## Shaped
 
-
 # Data labels
 
 ## Dataframe columns
 
 Key dataframe columns used throughout the tool are described here.
 
-### Contracted Load
+### Contracted Energy
+
+The volume of load to be covered by the PPA in each interval. Can also be thought of as the volume of renewable energy 
+being purchased via the PPA in each interval. 
 
 ### Hybrid
 

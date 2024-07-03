@@ -10,3 +10,5 @@ CACHE
 *results/
 *script_for_flex.py
 *flow_notebook.ipynb
+time_series_data_with_battery.csv
+time_series_data_with_battery.parquet
