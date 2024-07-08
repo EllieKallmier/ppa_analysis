@@ -1,7 +1,9 @@
-# File to hold functions that will assist with testing and validation. 
+# File to hold functions that will assist with testing, validation or other small formatting and calculation tasks that are secondary to the main functionality of the tool.
 import pandas as pd
-from datetime import timedelta
 import os
+import json
+import holidays
+from datetime import timedelta
 from collections import Counter
 
 
@@ -198,3 +200,137 @@ def get_data_years(cache_directory):
     # Get all the year that hav three files cached for each year.
     years_with_complete_data = [year for (year, count) in year_counts.items() if count >= 3]
     return years_with_complete_data
+
+# TODO: Ellie to add docstrings here
+# Helper function to read in json files (for network tariff selection)
+def read_json_file(filename):
+    f = open(f'{filename}.json', 'r')
+    data = json.loads(f.read())
+    f.close()
+    return data
+
+
+# Add an extra column to load_and_gen_data df that holds a string value denoting the season associated with the index timestamp.
+def get_seasons(
+    load_and_gen:pd.DataFrame
+) -> pd.DataFrame:
+    seasonal_load_and_gen = load_and_gen.copy()
+    seasonal_load_and_gen['Season'] = ''
+
+    seasonal_load_and_gen.loc[seasonal_load_and_gen.index.month.isin([1,2,12]), 'Season'] = 'Summer'
+    seasonal_load_and_gen.loc[seasonal_load_and_gen.index.month.isin([3, 4, 5]), 'Season'] = 'Autumn'
+    seasonal_load_and_gen.loc[seasonal_load_and_gen.index.month.isin([6, 7, 8]), 'Season'] = 'Winter'
+    seasonal_load_and_gen.loc[seasonal_load_and_gen.index.month.isin([9, 10, 11]), 'Season'] = 'Spring'
+
+    return seasonal_load_and_gen
+
+# Helper function: get weekday/weekends
+# Sets regional public holidays as 'weekend' alongside Sat/Sun
+def get_weekends(load_and_gen, region):
+    weekend_load_and_gen = load_and_gen.copy()
+    holiday_dates = pd.Series(
+        holidays.country_holidays(
+            'AU', 
+            subdiv=region[:-1], 
+            years=range(weekend_load_and_gen.index.min().year, weekend_load_and_gen.index.max().year+1)
+        )
+    )
+    weekend_load_and_gen['Date'] = weekend_load_and_gen.index.date
+    weekend_load_and_gen['Weekday'] = weekend_load_and_gen.index.dayofweek
+    weekend_load_and_gen['Weekend'] = (weekend_load_and_gen['Date'].isin(holiday_dates.index)) | \
+        (weekend_load_and_gen['Weekday'].isin([5,6]))
+    weekend_load_and_gen['Weekend'] = weekend_load_and_gen['Weekend'].astype(int)
+    weekend_load_and_gen = weekend_load_and_gen.drop(columns=['Date', 'Weekday'])
+
+    return weekend_load_and_gen
+
+# Format other charges: used to re-format "other_charges" collected from user input widgets.
+# Re-formats to match required structure for sunspot bill_calculator.
+def format_other_charges(
+        extra_charges_collector:dict
+) -> dict:
+    other_charges = { 
+        "Customer Type": "Commercial",
+        "Energy Charges": {
+            "Peak Rate": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['peak_rate'].value
+            },
+            "Shoulder Rate": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['shoulder_rate'].value
+            },
+            "Off-Peak Rate": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['off_peak_rate'].value
+            },
+            "Retailer Demand Charge": {
+            "Unit": "c/kVA/day",
+            "Value": extra_charges_collector['retailer_demand_charge'].value
+            }
+        },
+        "Metering Charges": {
+            "Meter Provider/Data Agent Charges": {
+            "Unit": "$/Day",
+            "Value": extra_charges_collector['meter_provider_charge'].value
+            },
+            "Other Meter Charges": {
+            "Unit": "$/Day",
+            "Value": extra_charges_collector['other_meter_charge'].value
+            }
+        },
+        "Environmental Charges": {
+            "LREC Charge": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['lrec_charge'].value
+            },
+            "SREC Charge": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['srec_charge'].value
+            },
+            "State Environment Charge": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['state_env_charge'].value
+            }
+        },
+        "AEMO Market Charges": {
+            "AEMO Participant Charge": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['participant_charge'].value
+            },
+            "AEMO Ancillary Services Charge": {
+            "Unit": "c/kWh",
+            "Value": extra_charges_collector['ancillary_services_charge'].value
+            }
+        },
+        "Other Variable Charges": {
+            "Other Variable Charge 1": {
+            "Unit": "$/kWh",
+            "Value": extra_charges_collector['other_charge_one'].value
+            },
+            "Other Variable Charge 2": {
+            "Unit": "$/kWh",
+            "Value": extra_charges_collector['other_charge_two'].value
+            },
+            "Other Variable Charge 3": {
+            "Unit": "$/kWh",
+            "Value": extra_charges_collector['other_charge_three'].value
+            }
+        },
+        "Other Fixed Charges": {
+            "Total GST": {
+            "Unit": "$/Bill",
+            "Value": extra_charges_collector['total_gst'].value
+            },
+            "Other Fixed Charge 1": {
+            "Unit": "$/Bill",
+            "Value": extra_charges_collector['other_fixed_charge_one'].value
+            },
+            "Other Fixed Charge 2": {
+            "Unit": "$/Bill",
+            "Value": extra_charges_collector['other_fixed_charge_two'].value
+            }
+        }
+    }
+
+    return other_charges
