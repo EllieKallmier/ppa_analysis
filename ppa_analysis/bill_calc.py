@@ -209,7 +209,7 @@ def calculate_firming(
         a column specifying the contracted energy (MWh) name 'Contracted Energy', and a column specifying the firming
         price ($/MWh) (name formatted like 'Firming price: NSW1'). An optional column named 'Fixed ($/day)' can be 
         passed if the firming type is retail tariff with a daily charge.
-    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
+    :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yearly, 'Q'
         for quarterly and 'M' for monthly.
     :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
     :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
