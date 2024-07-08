@@ -67,21 +67,45 @@ GEN_COST_DATA = {
             'Fixed O&M ($/kW)': 36.0,
             'Variable O&M ($/kWh)': 2.7 / 1000,
             'Capital ($/kW)': 2005,
-            'Capacity Factor': 0.35
+            'Capacity Factor': 0.35,
+            'Construction Time (years)': 1.2,
+            'Economic Life (years)': 25
         },
         'Photovoltaic Flat Panel': {
             'Fixed O&M ($/kW)': 14.4,
             'Variable O&M ($/kWh)': 0.0,
             'Capital ($/kW)': 1280,
-            'Capacity Factor': 0.22
+            'Capacity Factor': 0.22,
+            'Construction Time (years)': 1.0,
+            'Economic Life (years)': 25
         }
     }
 }
 
-TARIFF_STRUCTURE_TYPES = [
-    'Flat',
-    'Time of Use'
+# This should be a .json file, but leave off the extension here
+COMMERCIAL_TARIFFS_FN = 'data_caches/Large_Commercial_23_24'
+
+FLEXIBILITY_RATINGS = [
+    'Very Low',
+    'Low',
+    'Medium',
+    'High',
+    'Very High'
 ]
+
+FLEX_RATING_VALUES = {
+    'Very High':0.0,
+    'High': 0.2,
+    'Medium' : 0.4,
+    'Low' : 0.6,
+    'Very Low' : 0.8
+}
+
+# Set LCOE parameters
+
+# Discount rate as a float to be applied in LCOE calculations
+DISCOUNT_RATE = 0.07
+
 
 # Optimisation parameters
 
