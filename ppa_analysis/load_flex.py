@@ -2,6 +2,7 @@
 
 import pandas as pd
 import numpy as np
+from ppa_analysis import advanced_settings
 from mip import Model, xsum, minimize, CONTINUOUS, BINARY, OptimizationStatus
 
 # TODO: add documentation here
@@ -18,12 +19,7 @@ def create_base_days(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     
     # flex rating percentile dictionary:
-    # TODO: find/make sure these match the literature or have a decent justification
-    flex_dict = {
-        'High': 0.5,
-        'Medium' : 0.7,
-        'Low' : 0.9
-    }
+    flex_dict = advanced_settings.FLEX_RATING_VALUES
 
     # validate flex rating here? Or outside of this function??
     if flexibility_rating not in flex_dict:
@@ -59,7 +55,6 @@ def daily_load_shifting(
     daily_load_sums = get_daily_load_sums(df)
     base_weekday, base_weekend = create_base_days(df, flexibility_rating)
     all_time_max_load = df['Load'].max(numeric_only=True)
-
 
     # run optimisation for each day individually to keep constraints:
     for idx, date in enumerate(daily_load_sums.index):
@@ -175,11 +170,22 @@ def daily_load_shifting(
                         raise ValueError('wrong type of error atm but firming isn\'t right')
                     
                     m.clear()
-        
+            
+            else:
+                day_result = pd.DataFrame({'Load dispatch':0.0,'Contract': contracted_renewables, 'Original load': original_load, 'Base load': base_load})
+
+                results_df = pd.concat([results_df, day_result], axis='rows')
+                
         else:
-            day_result = pd.DataFrame({'Load dispatch':0.0,'Contract': contracted_renewables, 'Original load': original_load, 'Base load': base_load})
+            day_result = pd.DataFrame({'Load dispatch':0.0,'Contract': data_for_one_day['Contracted Energy'].values, 'Original load': data_for_one_day['Load'].values, 'Base load': data_for_one_day['Load'].values})
 
             results_df = pd.concat([results_df, day_result], axis='rows')
+    
+    results_df['Load with flex'] = results_df['Load dispatch'] + results_df['Base load']
+    date_index = df.index.copy()
+
+    results_df = results_df.reset_index(drop=True).copy()
+    results_df.index = date_index
     
     return results_df
 
