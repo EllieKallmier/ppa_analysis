@@ -7,7 +7,7 @@ modelling battery operation, load flexibility, and calculating bills.
 
 # Install
 
-Create a Python new virtual environment and install the required dependencies, in the terminal:
+Create a Python new virtual environment and install the required dependencies. In the terminal:
 
 1. Move to tool directory: ```cd /path/to/the/ppa_analysis/directory```
 2. Create python virtual environment: ```python -m venv env```
@@ -47,7 +47,7 @@ provides:
 
 ## Examples
 
-In [example.ipynb](example.ipynb) a simple example using a single day of data demonstrates the tools functionality, 
+In [example.ipynb](example.ipynb) a simple example using a single month of data demonstrates the tools functionality, 
 similar to interface.ipynb, but without the input widgets so the user can see clearly how to use the tools through its 
 Pyhton API.
 
