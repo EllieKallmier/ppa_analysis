@@ -23,7 +23,7 @@ The tools capability can be explored and utilised through [interface.ipynb](inte
 1. After installing the tool, and with the virtual environment activated, launch jupyterlab using the terminal 
    command ```jupyter lab```. 
 2. Then open the file interface.ipynb.
-3. Three run each of notebooks cells in turn, and configure the inputs using the interactive input panels provided. 
+3. Then run each of notebooks cells in turn, and configure the inputs using the interactive input panels provided. 
 
 # Loading further NEM data
 

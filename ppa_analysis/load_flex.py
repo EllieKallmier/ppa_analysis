@@ -6,10 +6,12 @@ User facing functionality is provided through the function daily_load_shifting s
 """
 import pandas as pd
 import numpy as np
+
 from datetime import timedelta
-from mip import Model, xsum, minimize, CONTINUOUS, BINARY, OptimizationStatus, CBC, GUROBI
+from mip import Model, xsum, minimize, CONTINUOUS, OptimizationStatus, CBC, GUROBI
 
 from ppa_analysis import advanced_settings
+
 
 def _get_daily_load_sums(
         df: pd.DataFrame  # a pandas df that has DateTime index and 'Load' as a column name
@@ -21,6 +23,7 @@ def _create_base_days(
         load_profile: pd.DataFrame,
         base_load_quantile: float
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+
     # First get just the load profile from df:
     load_profile = load_profile[['Load', 'Weekend']].copy()
 
@@ -245,6 +248,7 @@ def daily_load_shifting(
                         raise ValueError('wrong type of error atm but firming isn\'t right')
 
                     m.clear()
+
             else:
                 day_result = pd.DataFrame(
                     {'Load dispatch': 0.0, 'Contracted Energy': contracted_renewables, 'Original load': original_load,
@@ -256,6 +260,8 @@ def daily_load_shifting(
                 {'Load dispatch': 0.0, 'Contracted Energy': contracted_renewables, 'Original load': original_load,
                  'Base load': base_load}, index=data_for_one_day.index)
             results_df = pd.concat([results_df, day_result], axis='rows')
+    
+    results_df['Load with flex'] = results_df['Load dispatch'] + results_df['Base load']
 
     # Re-adjust index back to original values
     results_df['DateTime'] = results_df.index.to_series() + timedelta(seconds=1)

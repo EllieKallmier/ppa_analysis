@@ -29,7 +29,11 @@ def launch_input_collector():
         '''
     ))
 
+    out = widgets.Output()
+
     input_collector = {}
+
+    
 
     years_with_cached_data = helper_functions.get_data_years(advanced_settings.YEARLY_DATA_CACHE)
     input_collector['year'] = widgets.Dropdown(
@@ -80,16 +84,17 @@ def launch_input_collector():
     display(input_collector['generators'])
 
     def update_generator_options(change):
-        print('update gens')
         if change['new'] != change['old']:
             input_collector['generators'].options = get_generator_options()
 
     input_collector['year'].observe(update_generator_options)
     input_collector['generator_region'].observe(update_generator_options)
 
+    ## Can I run a charting function from here?? To show load and gen shapes?
+
     display(HTML(
         '''
-        <h3>Contract paramters:</h3>
+        <h3>Contract parameters:</h3>
         '''
     ))
 
@@ -118,7 +123,7 @@ def launch_input_collector():
     input_collector['settlement_period'] = widgets.Dropdown(
         options=advanced_settings.SETTLEMENT_PERIODS,
         value=advanced_settings.SETTLEMENT_PERIODS[0],
-        description='Settlment period:',
+        description='Settlement period:',
         disabled=False,
     )
     display(input_collector['settlement_period'])
@@ -126,8 +131,8 @@ def launch_input_collector():
     input_collector['contract_amount'] = widgets.BoundedFloatText(
         value=100.0,
         min=0,
-        max=100,
-        description='Contract amount (%):',
+        max=1000.0,
+        description='Contract amount (%):'
     )
     display(input_collector['contract_amount'])
 
@@ -164,7 +169,7 @@ def launch_input_collector():
     display(input_collector['guaranteed_percent'])
 
     input_collector['floor_price'] = widgets.FloatText(
-        value=65.0,
+        value=0.0,
         description='Floor price ($/MW/h):',
     )
     display(input_collector['floor_price'])
@@ -212,7 +217,7 @@ def launch_input_collector():
     ))
 
     input_collector['matching_percentile'] = widgets.BoundedFloatText(
-        value=1.0,
+        value=90.0,
         min=0,
         max=100,
         description='Matching percentile:',
@@ -312,6 +317,17 @@ def add_editor_for_generator(generator_data_editor, generator, input_collector):
                     description='Capacity Factor',
                 )
 
+                generator_data_editor[f'{generator}']['construction_time'] = widgets.FloatText(
+                    value=generator_data_set[generator_type]['Construction Time (years)'],
+                    description='Construction Time (years)',
+                )
+
+                generator_data_editor[f'{generator}']['economic_life'] = widgets.FloatText(
+                    value=generator_data_set[generator_type]['Economic Life (years)'],
+                    description='Economic Life (years)',
+                )
+
+
 def remove_editor_for_generator(generator_data_editor, generator):
     with generator_data_editor['out']:
         generator_data_editor[f'{generator}'].close
@@ -399,3 +415,281 @@ def launch_battery_input_collector():
     display(battery_input_collector['size_in_mwh'])
 
     return battery_input_collector
+
+
+def launch_flex_input_collector():
+
+    display(HTML(
+        '''
+        <style>
+        .widget-label { min-width: 30ex !important; }
+        .widget-select select { min-width: 70ex !important; }
+        .widget-dropdown select { min-width: 70ex !important; }
+        .widget-floattext input { min-width: 70ex !important; }
+        </style>
+        '''
+    ))
+
+    display(HTML(
+        '''
+        <h3>Load flexibility inputs:</h3>
+        '''
+    ))
+
+    flex_input_collector = {}
+
+    flex_input_collector['flex_rating'] = widgets.Dropdown(
+        options=advanced_settings.FLEXIBILITY_RATINGS,
+        value=advanced_settings.FLEXIBILITY_RATINGS[0],
+        description='Flexiblity rating:',
+        disabled=False,
+    )
+    display(flex_input_collector['flex_rating'])
+
+    flex_input_collector['raise_price'] = widgets.FloatText(
+        value=0.0,
+        description='Raise price ($/MWh):',
+    )
+    display(flex_input_collector['raise_price'])
+
+
+    flex_input_collector['lower_price'] = widgets.FloatText(
+        value=0.0,
+        description='Lower price ($/MWh):',
+    )
+    display(flex_input_collector['lower_price'])
+
+
+    flex_input_collector['ramp_up'] = widgets.FloatText(
+        value=0.01,
+        description='Ramp up penalty ($/MWh):',
+    )
+    display(flex_input_collector['ramp_up'])
+
+    flex_input_collector['ramp_down'] = widgets.FloatText(
+        value=0.01,
+        description='Ramp down penalty ($/MWh):',
+    )
+    display(flex_input_collector['ramp_down'])
+
+    return flex_input_collector
+
+
+
+# Tariffs: Network tariff selection and extra charges collected to create retail
+# tariff.
+def tariff_options_collector(input_collector):
+    display(HTML(
+        '''
+        <style>
+        .widget-label { min-width: 30ex !important; }
+        .widget-select select { min-width: 70ex !important; }
+        .widget-dropdown select { min-width: 70ex !important; }
+        .widget-floattext input { min-width: 70ex !important; }
+        </style>
+        '''
+    ))
+
+    display(HTML(
+        '''
+        <h3>Network tariff selection:</h3>
+        '''
+    ))
+
+    tariff_collector = {}
+
+    def get_tariff_options(input_collector):
+        region = input_collector['load_region'].value
+        all_tariffs = helper_functions.read_json_file(advanced_settings.COMMERCIAL_TARIFFS_FN)
+        all_tariffs = all_tariffs[0]['Tariffs']
+
+        tariff_options = []
+        for i, tariff in enumerate(all_tariffs):
+            if 'CustomerType' in tariff:
+                if tariff['CustomerType'] != 'Residential':
+                    # create the widgets
+                    if tariff['State'] == input_collector['load_region'].value[:-1]:
+                        tariff_options.append(tariff['Name'])
+        return tariff_options
+
+    tariff_options = get_tariff_options(input_collector)
+
+    tariff_collector['tariff_name'] = widgets.Dropdown(
+        options=tariff_options,
+        value=tariff_options[0],
+        description='Tariff name:',
+        disabled=False,
+    )
+    display(tariff_collector['tariff_name'])
+
+    def update_tariff_options(change):
+        if change['new'] != change['old']:
+            tariff_collector['tariff_name'].options = get_tariff_options(input_collector)
+    input_collector['load_region'].observe(update_tariff_options)
+
+    return tariff_collector
+
+def launch_extra_charges_collector():
+    display(HTML(
+        '''
+        <style>
+        .widget-label { min-width: 30ex !important; }
+        .widget-select select { min-width: 70ex !important; }
+        .widget-dropdown select { min-width: 70ex !important; }
+        .widget-floattext input { min-width: 70ex !important; }
+        </style>
+        '''
+    ))
+
+    display(HTML(
+        '''
+        <h3>Other Commercial Charges:</h3>
+        '''
+    ))
+
+    extra_charges_collector = {}
+
+    display(HTML(
+        '''
+        <h4>Energy Charges:</h4>
+        '''
+    ))
+
+    extra_charges_collector['peak_rate'] = widgets.FloatText(
+        value=0.06,
+        description='Peak rate ($/kWh):'
+    )
+    display(extra_charges_collector['peak_rate'])
+
+    extra_charges_collector['shoulder_rate'] = widgets.FloatText(
+        value=0.06,
+        description='Shoulder rate ($/kWh):'
+    )
+    display(extra_charges_collector['shoulder_rate'])
+
+    extra_charges_collector['off_peak_rate'] = widgets.FloatText(
+        value=0.04,
+        description='Off-Peak rate ($/kWh):'
+    )
+    display(extra_charges_collector['off_peak_rate'])
+
+    extra_charges_collector['retailer_demand_charge'] = widgets.FloatText(
+        value=0.00,
+        description='Retailer demand charge ($/kVA/day):'
+    )
+    display(extra_charges_collector['retailer_demand_charge'])
+
+
+    display(HTML(
+        '''
+        <h4>Metering Charges:</h4>
+        '''
+    ))
+
+    extra_charges_collector['meter_provider_charge'] = widgets.FloatText(
+        value=2.00,
+        description='Meter Provider/Data Agent Charges ($/Day):'
+    )
+    display(extra_charges_collector['meter_provider_charge'])
+
+    extra_charges_collector['other_meter_charge'] = widgets.FloatText(
+        value=6.00,
+        description='Other Meter Charges ($/Day):'
+    )
+    display(extra_charges_collector['other_meter_charge'])
+
+
+    display(HTML(
+        '''
+        <h4>Environmental Charges:</h4>
+        '''
+    ))
+
+    extra_charges_collector['lrec_charge'] = widgets.FloatText(
+        value=0.8000,
+        description='LREC Charge ($/kWh):'
+    )
+    display(extra_charges_collector['lrec_charge'])
+
+    extra_charges_collector['srec_charge'] = widgets.FloatText(
+        value=0.4000,
+        description='SREC Charge ($/kWh):'
+    )
+    display(extra_charges_collector['srec_charge'])
+
+    extra_charges_collector['state_env_charge'] = widgets.FloatText(
+        value=0.2000,
+        description='State Environment Charge ($/kWh):'
+    )
+    display(extra_charges_collector['state_env_charge'])
+
+
+    display(HTML(
+        '''
+        <h4>AEMO Market Charges:</h4>
+        '''
+    ))
+
+    extra_charges_collector['participant_charge'] = widgets.FloatText(
+        value=0.0360,
+        description='AEMO Participant Charge ($/kWh):'
+    )
+    display(extra_charges_collector['participant_charge'])
+
+    extra_charges_collector['ancillary_services_charge'] = widgets.FloatText(
+        value=0.0180,
+        description='AEMO Ancillary Services Charge ($/kWh):'
+    )
+    display(extra_charges_collector['ancillary_services_charge'])
+    
+
+    display(HTML(
+        '''
+        <h4>Other Variable Charges:</h4>
+        '''
+    ))
+
+    extra_charges_collector['other_charge_one'] = widgets.FloatText(
+        value=0.0,
+        description='Other Variable Charge 1 ($/kWh):'
+    )
+    display(extra_charges_collector['other_charge_one'])
+
+    extra_charges_collector['other_charge_two'] = widgets.FloatText(
+        value=0.0,
+        description='Other Variable Charge 2 ($/kWh):'
+    )
+    display(extra_charges_collector['other_charge_two'])
+
+    extra_charges_collector['other_charge_three'] = widgets.FloatText(
+        value=0.0,
+        description='Other Variable Charge 3 ($/kWh):'
+    )
+    display(extra_charges_collector['other_charge_three'])
+
+
+    display(HTML(
+        '''
+        <h4>Other Fixed Charges:</h4>
+        '''
+    ))
+
+    extra_charges_collector['total_gst'] = widgets.FloatText(
+        value=0.0,
+        description='Total GST ($/Bill):'
+    )
+    display(extra_charges_collector['total_gst'])
+
+    extra_charges_collector['other_fixed_charge_one'] = widgets.FloatText(
+        value=0.0,
+        description='Other Fixed Charge 1 ($/Bill):'
+    )
+    display(extra_charges_collector['other_fixed_charge_one'])
+
+    extra_charges_collector['other_fixed_charge_two'] = widgets.FloatText(
+        value=0.0,
+        description='Other Fixed Charge 2 ($/Bill):'
+    )
+    display(extra_charges_collector['other_fixed_charge_two'])
+
+    return extra_charges_collector
