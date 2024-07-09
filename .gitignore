@@ -12,3 +12,5 @@ CACHE
 *flow_notebook.ipynb
 time_series_data_with_battery.csv
 time_series_data_with_battery.parquet
+ppa_analysis/sunspot_bill_calculator.py
+scratch.py

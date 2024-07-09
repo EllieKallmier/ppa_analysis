@@ -266,16 +266,17 @@ def launch_input_collector():
     return input_collector
 
 
-def get_unit_capcity(unit):
+def get_unit_capacity(unit):
     duid = unit.split(':')[0]
     registered_capacity = static_table(
         table_name='Generators and Scheduled Loads',
         raw_data_location=advanced_settings.RAW_DATA_CACHE,
-        select_columns=['DUID', 'Reg Cap (MW)'],
+        select_columns=['DUID', 'Reg Cap generation (MW)'],
         filter_cols=['DUID'],
         filter_values=[(duid,)]
     )['Reg Cap (MW)'].values[0]
     return float(registered_capacity) * 1000
+
 
 def add_editor_for_generator(generator_data_editor, generator, input_collector):
     with generator_data_editor['out']:
@@ -291,38 +292,38 @@ def add_editor_for_generator(generator_data_editor, generator, input_collector):
                     '''
                 )
 
-                capacity = get_unit_capcity(generator)
-                generator_data_editor[f'{generator}']['capacity'] = widgets.FloatText(
+                capacity = get_unit_capacity(generator)
+                generator_data_editor[f'{generator}']['Nameplate Capacity (kW)'] = widgets.FloatText(
                     value=capacity,
                     description='Nameplate Capacity (kW)',
                 )
-
-                generator_data_editor[f'{generator}']['fixed_om'] = widgets.FloatText(
+                    
+                generator_data_editor[f'{generator}']['Fixed O&M ($/kW)'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Fixed O&M ($/kW)'],
                     description='Fixed O&M ($/kW)',
                 )
  
-                generator_data_editor[f'{generator}']['variable_om'] = widgets.FloatText(
+                generator_data_editor[f'{generator}']['Variable O&M ($/kWh)'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Variable O&M ($/kWh)'],
                     description='Variable O&M ($/kWh)',
                 )
 
-                generator_data_editor[f'{generator}']['capital'] = widgets.FloatText(
+                generator_data_editor[f'{generator}']['Capital ($/kW)'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Capital ($/kW)'],
                     description='Capital ($/kW)',
                 )
 
-                generator_data_editor[f'{generator}']['capacity_factor'] = widgets.FloatText(
+                generator_data_editor[f'{generator}']['Capacity Factor'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Capacity Factor'],
                     description='Capacity Factor',
                 )
 
-                generator_data_editor[f'{generator}']['construction_time'] = widgets.FloatText(
+                generator_data_editor[f'{generator}']['Construction Time (years)'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Construction Time (years)'],
                     description='Construction Time (years)',
                 )
 
-                generator_data_editor[f'{generator}']['economic_life'] = widgets.FloatText(
+                generator_data_editor[f'{generator}']['Economic Life (years)'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Economic Life (years)'],
                     description='Economic Life (years)',
                 )
@@ -330,8 +331,11 @@ def add_editor_for_generator(generator_data_editor, generator, input_collector):
 
 def remove_editor_for_generator(generator_data_editor, generator):
     with generator_data_editor['out']:
-        generator_data_editor[f'{generator}'].close
-        del generator_data_editor[f'{generator}']
+        for component in generator_data_editor[generator].keys():
+            generator_data_editor[generator][component].close()
+            del generator_data_editor[generator][component]
+    del generator_data_editor[generator]
+
 
 def update_generator_data_editor(generator_data_editor, input_collector, change=None):
 
@@ -354,6 +358,7 @@ def update_generator_data_editor(generator_data_editor, input_collector, change=
             if generator not in change_new:
                 remove_editor_for_generator(generator_data_editor, generator)
                 pass
+
     generator_data_editor['out'].clear_output()
     with generator_data_editor['out']:
         for key, value in generator_data_editor.items():
@@ -363,6 +368,7 @@ def update_generator_data_editor(generator_data_editor, input_collector, change=
                     
     display(generator_data_editor['out'])
     return generator_data_editor
+
 
 def launch_generator_data_editor(input_collector):
     generator_data_editor = {}
@@ -438,13 +444,14 @@ def launch_flex_input_collector():
 
     flex_input_collector = {}
 
-    flex_input_collector['flex_rating'] = widgets.Dropdown(
-        options=advanced_settings.FLEXIBILITY_RATINGS,
-        value=advanced_settings.FLEXIBILITY_RATINGS[0],
-        description='Flexiblity rating:',
-        disabled=False,
+    flex_input_collector['base_load_quantile'] = widgets.BoundedFloatText(
+        value=0.8,
+        min=0,
+        max=1.0,
+        description='Base load quantile:',
+        tooltip='Run help(load_flex.daily_load_shifting) for details.'
     )
-    display(flex_input_collector['flex_rating'])
+    display(flex_input_collector['base_load_quantile'])
 
     flex_input_collector['raise_price'] = widgets.FloatText(
         value=0.0,
@@ -473,7 +480,6 @@ def launch_flex_input_collector():
     display(flex_input_collector['ramp_down'])
 
     return flex_input_collector
-
 
 
 # Tariffs: Network tariff selection and extra charges collected to create retail
@@ -528,6 +534,7 @@ def tariff_options_collector(input_collector):
     input_collector['load_region'].observe(update_tariff_options)
 
     return tariff_collector
+
 
 def launch_extra_charges_collector():
     display(HTML(

@@ -23,7 +23,6 @@ def _create_base_days(
         load_profile: pd.DataFrame,
         base_load_quantile: float
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-
     # First get just the load profile from df:
     load_profile = load_profile[['Load', 'Weekend']].copy()
 
@@ -55,11 +54,11 @@ def daily_load_shifting(
     proceeds as follows:
         1. A base load profile of inflexible consumption is defined for the day. The base load volume for each interval
         in the day is defined as the quantile of load volume across the month specified by the base_load_quantile, i.e.
-        if the base_load_quantile is 0.5, then the base load volume for each interval will be the median consumption of
-        the load on corresponding hour of the day across the month. Note, that when calculating the quantile weekdays
-        and weekends are considered separately. Further, the base load profile is adjusted, such that if the actual load
-        profile for the day is lower than the base load for an interval, then the base load volume is set to the actual
-        load volume.
+        if the quantile 0.5 were specified, then for each hour in the day the median consumption for that hour across
+        the month would be used as the consumption in the monthly baseload profile. Note, that when calculating the
+        quantile weekdays and weekends are considered separately. Further, the base load profile is adjusted, such that
+        if the actual load profile for the day is lower than the base load for an interval, then the base load volume is
+        set to the actual load volume.
         2. The optimisation uses a decision variable for each interval in the day, to decide how much energy above the
         inflexible base load profile to dispatch in each interval.
         3. The optimisation constrains the variables such that the net load profile (inflexible plus dispatched) cannot
@@ -239,7 +238,8 @@ def daily_load_shifting(
 
                     # Now check the results to make sure that they make sense:
                     day_result['Firm real'] = (
-                                (day_result['Load dispatch'] + day_result['Base load']) - day_result['Contracted Energy']).clip(
+                            (day_result['Load dispatch'] + day_result['Base load']) - day_result[
+                        'Contracted Energy']).clip(
                         lower=0.0)
                     day_result['Firm check'] = (round(day_result['Firm real'], 3) == round(day_result['Firming'], 3))
 
@@ -257,10 +257,13 @@ def daily_load_shifting(
 
         else:
             day_result = pd.DataFrame(
-                {'Load dispatch': 0.0, 'Contracted Energy': contracted_renewables, 'Original load': original_load,
-                 'Base load': base_load}, index=data_for_one_day.index)
+            {'Load dispatch': 0.0,
+                  'Contracted Energy': data_for_one_day['Contracted Energy'].values,
+                  'Original load': data_for_one_day['Load'].values,
+                  'Base load': np.nan},
+                index=data_for_one_day.index)
             results_df = pd.concat([results_df, day_result], axis='rows')
-    
+
     results_df['Load with flex'] = results_df['Load dispatch'] + results_df['Base load']
 
     # Re-adjust index back to original values

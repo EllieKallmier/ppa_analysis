@@ -175,9 +175,9 @@ def run_hybrid_optimisation(
         for g in G:
             name = gen_names[str(g)]
             details = {
-                'Percent of generator output' : round(percent_of_generation[str(g)].x*100, 1),
-                'Percent of hybrid trace' : round(
-                    sum(percent_of_generation[str(g)].x * gen_data_series[str(g)]) / sum(hybrid_trace['Hybrid']) * 100, 1)
+                'Percent of generator output': percent_of_generation[str(g)].x*100,
+                'Percent of hybrid trace':
+                    sum(percent_of_generation[str(g)].x * gen_data_series[str(g)]) / sum(hybrid_trace['Hybrid']) * 100
             }
 
             results[name] = details

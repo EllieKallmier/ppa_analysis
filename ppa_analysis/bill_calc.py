@@ -176,10 +176,10 @@ def calculate_ppa(
     price_and_load['Strike Price (Indexed)'] = strike_prices_indexed.copy()
 
     # settle around the contracted energy: strike_price - max(RRP, floor_price)
-    price_and_load['Price'] = (price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load['RRP:'], floor_price))
+    price_and_load['Price'] = (price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load['RRP'], floor_price))
     price_and_load['Wholesale Cost'] = price_and_load['Contracted Energy'] * price_and_load['RRP']
     price_and_load['PPA Settlement'] = price_and_load['Contracted Energy'] * (
-            price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load[f'RRP'], floor_price))
+            price_and_load['Strike Price (Indexed)'] - np.maximum(price_and_load['RRP'], floor_price))
 
     price_and_load['PPA Value'] = price_and_load['Strike Price (Indexed)'] * price_and_load['Contracted Energy']
     price_and_load['PPA Final Cost'] = price_and_load[['Wholesale Cost', 'PPA Settlement']].sum(axis=1)
@@ -392,11 +392,10 @@ def calculate_lgcs(
 def calculate_wholesale_bill(
         df:pd.DataFrame,
         settlement_period:str,
-        load_region:str,
         lgc_buy_price:float=0.0,
 ) -> pd.DataFrame:
     data = df.copy()
-    data['Wholesale Cost'] = data[f'RRP: {load_region}'] * data['Load']
+    data['Wholesale Cost'] = data['RRP'] * data['Load']
 
     wholesale_bill = data[['Load', 'Wholesale Cost']].resample(settlement_period)\
         .sum(numeric_only=True)
@@ -471,11 +470,11 @@ def calculate_bill(
     [2 rows x 8 columns]
 
     :param volume_and_price: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
-        a column specifying the contracted energy (MWh) name 'Contracted Energy', a column specifying the wholesale
-        spot price ($/MWh) (formatted like 'RRP: NSW1'), a column specifying the firming price ($/MWh)
-        (formatted like 'Firming price: NSW1'), and a column specifying the combined renewable energy
-        generation profiles named 'Hybrid' if a contract_type of 'Baseload' or 'Shaped' is specified.
-        An optional column named 'Fixed ($/day)' can be passed if the firming type is retail tariff with a daily charge.
+        a column specifying the contracted energy (MWh) name 'Contracted Energy', a column named 'RRP' specifying the
+        wholesale, a column named 'Firming price' specifying the firming price ($/MWh), and a column specifying the
+        combined renewable energy generation profiles named 'Hybrid' if a contract_type of 'Baseload' or 'Shaped' is
+        specified. An optional column named 'Fixed ($/day)' can be passed if the firming type is retail tariff with a
+        daily charge.
     :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
         for quarterly and 'M' for monthly.
     :param contract_type:

@@ -215,7 +215,7 @@ def calculate_lcoe(
     # Baseline assumptions:
 
 
-    capital_cost = generator_info[ 'Capital ($/kW)']
+    capital_cost = generator_info['Capital ($/kW)']
     numerator, denominator = 0, 0
     for year in range(1, advanced_settings.LIFETIME_YEARS + 1):
         kwh_in_year_n = generator_info['Capacity Factor'] * (365 * 24) # Note: this doesn't currently account for leap years!
