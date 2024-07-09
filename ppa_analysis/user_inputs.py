@@ -274,7 +274,7 @@ def get_unit_capacity(unit):
         select_columns=['DUID', 'Reg Cap generation (MW)'],
         filter_cols=['DUID'],
         filter_values=[(duid,)]
-    )['Reg Cap (MW)'].values[0]
+    )['Reg Cap generation (MW)'].values[0]
     return float(registered_capacity) * 1000
 
 
