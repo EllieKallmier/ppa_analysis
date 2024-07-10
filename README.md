@@ -31,7 +31,12 @@ The notebook [data_loading.ipynb](data_loading.ipynb)
 
 # Bring your own load data
 
-Add description of load data format required, and where to put data so the interface can find it.
+When using the interface.ipynb user's can use their own load data by adding a CSV containing the load data to the 
+directory data_caches/c_and_i_customer_loads. Default expected format of the load data is one column named 'TS'
+containing time stamps, and another named 'Load' containing the consumption in kWh for the period ending on the
+time stamp. The expected format of the time stamp is day-month-year format, with various options like 
+"DD-MM-YY HH:MM:SS" or "DD/MM/YY HH:MM:SS" being acceptable. The expected format can also be adjusted using the 
+ppa_analysis/advanced_settings.py module.
 
 # Documentation
 
@@ -49,9 +54,8 @@ provides:
 ## Examples
 
 In [api_examples.ipynb](api_examples.ipynb) a simple example using a single month of data demonstrates the tools 
-functionality, 
-similar to interface.ipynb, but without the input widgets so the user can see clearly how to use the tools through its 
-Pyhton API.
+functionality, similar to interface.ipynb, but without the input widgets so the user can see clearly how to use 
+the tools through its Python API.
 
 ## Glossary
 
