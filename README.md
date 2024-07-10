@@ -39,6 +39,7 @@ Add description of load data format required, and where to put data so the inter
 
 Provided in docstrings in the core tool modules, which are listed here along with the functionality each module 
 provides:
+
     - ppa_analysis/import_data: preparing data
     - ppa_analysis/hybrid: contract portfolio optimisation
     - ppa_analysis/battery: battery optimisation to minimise cost of load not met by renewables
@@ -47,7 +48,8 @@ provides:
 
 ## Examples
 
-In [example.ipynb](example.ipynb) a simple example using a single month of data demonstrates the tools functionality, 
+In [api_examples.ipynb](api_examples.ipynb) a simple example using a single month of data demonstrates the tools 
+functionality, 
 similar to interface.ipynb, but without the input widgets so the user can see clearly how to use the tools through its 
 Pyhton API.
 
