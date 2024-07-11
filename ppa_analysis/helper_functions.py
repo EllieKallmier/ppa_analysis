@@ -2,9 +2,12 @@
 import pandas as pd
 import os
 import json
+import copy
 import holidays
 from datetime import timedelta
 from collections import Counter
+from ppa_analysis import advanced_settings
+from sunspot_bill_calculator import add_other_charges_to_tariff, convert_network_tariff_to_retail_tariff
 
 
 # Test help functions:
@@ -334,3 +337,61 @@ def format_other_charges(
     }
 
     return other_charges
+
+
+# Gets the 'chunk' of load data for one settlement period
+def get_load_data_chunk(
+    load_data:pd.DataFrame,
+    end_date:pd.Timestamp
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    
+    """ 
+    Gets and returns two dataframes from an initial one, separated at a specified date.
+
+    :param load_data: Dataframe with datetime index and a column containing load data (MWh)
+        named 'Load'.
+    :param end_date: pd.Timestamp denoting the end of the chunk to be returned. A timedelta day
+        is added to end_date to ensure that all data up to the end of the desired period is returned.
+    :return:
+        - pd.DataFrame, containing the contents of the original dataframe up to and including the specified end date.
+        - pd.DataFrame, containing the contents of the original dataframe starting from the day after the specified end date to the end of the timeseries.
+    """
+    
+    end_date_plus_one_day = end_date + timedelta(days=1)
+    chunk = load_data[load_data.index <= end_date_plus_one_day].copy()
+    remainder = load_data[load_data.index > end_date_plus_one_day].copy()
+    
+    return chunk, remainder
+
+
+def get_selected_tariff(
+        tariff_collector:dict,
+        extra_charges_collector:dict,
+        retail:bool=False
+) -> dict:
+    """ 
+    Selects and returns the user's chosen network tariff formatted to be passed to CEEM's SunSPOT bill_calculator function as a retail tariff. If extra charges are supplied and the tariff type is retail, the extra charges are also added to the tariff structure and returned.
+
+    :param tariff_collector: dict, containing the name of the user's chosen tariff as a str.
+    :param extra_charges_collector: dict, containing user inputs for extra charges 
+        as defined in user_inputs.launch_extra_charges_collector().
+    :param retail: bool, indicates whether the tariff selected to be returned is 
+        a retail tariff and therefore needs other charges to be added before reformatting.
+    :return: dict, the selected tariff returned reformatted and with other charges 
+        added as necessary.
+    """
+    all_tariffs = read_json_file(advanced_settings.COMMERCIAL_TARIFFS_FN)
+    all_tariffs = all_tariffs[0]['Tariffs']
+    selected_tariff_name = tariff_collector['tariff_name'].value
+    selected_tariff = {}
+    for tariff in all_tariffs:
+        if tariff['Name'] == selected_tariff_name:
+            selected_tariff = copy.deepcopy(tariff)
+
+    if retail:
+        other_charges = format_other_charges(extra_charges_collector)
+        selected_tariff = add_other_charges_to_tariff(selected_tariff, other_charges)
+
+    selected_tariff_as_retail = convert_network_tariff_to_retail_tariff(selected_tariff)
+
+    return selected_tariff_as_retail
