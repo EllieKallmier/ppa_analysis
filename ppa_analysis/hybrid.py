@@ -213,7 +213,7 @@ def hybrid_shaped(
     contract. When calling run_hybrid_optimisation:
         - the contracted_energy parameter is set to an artificial load profile created by using the load percentile
           value (given in percentile_val) on a yearly, quarterly, or monthly basis according to the redef_period
-          ('Y', 'Q', 'M'), e.g. in the quarterly case with percentile_val=0.5, an hourly load profile would be created
+          ('Y', 'Q', 'M'), e.g. in the quarterly case with percentile_val=50, an hourly load profile would be created
           where the demand value for each hour was equal to the quarter's median demand.
         - total_sum is set to the sum of load volume across the first year (not adjusted by contract_amount).
         - the contract type is set to 'Baseload'
@@ -233,7 +233,7 @@ def hybrid_shaped(
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param redef_period: str, period over which to average the load to determine the base load, should be one of
         'Y', 'Q', or 'M'.
-    :param percentile_val: str, the percentile value to take in each period (yearly, quarterly, monthly) when
+    :param percentile_val: float, the percentile value to take in each period (yearly, quarterly, monthly) when
         creating the artificial load profile for optimisation, as explained above.
     :return:
         - pd.DataFrame, the time_series_data dataframe, with two extra columns. 'Hybrid' specifying the combined
@@ -258,10 +258,10 @@ def hybrid_shaped(
     if contracted_amount < 0 or contracted_amount > 100:
         raise ValueError('contracted_amount must be a float between 0 - 100')
     
-    if percentile_val < 0 or percentile_val > 1.0:
-        raise ValueError('percentile_val must be a float between 0 - 1.0.')
+    if percentile_val < 0 or percentile_val > 100:
+        raise ValueError('percentile_val must be a float between 0 - 100.')
     
-    percentile_val = 1 - percentile_val
+    percentile_val = 1 - (percentile_val/100)
 
     # also need to find out if it's a leap year:
     leap_year = check_leap_year(df)
