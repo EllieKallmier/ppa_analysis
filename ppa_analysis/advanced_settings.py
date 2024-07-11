@@ -109,8 +109,20 @@ DISCOUNT_RATE = 0.07
 
 # Optimisation parameters
 
+# Solver to use
+solver = 'CBC' # Other option is GUROBI
+
 # The penalty (in $/MWh) for oversupplying energy.
 OVERSUPPLY_PENALTY = 1000
 
 # The penalty (in $/MWh) for undersupplying energy (where an undersupply is less than the total_sum * unmet_cfe_score)
 UNDERSUPPLY_PENALTY = 16600.0
+
+# Battery state of charge limits
+MAX_SOC = 0.8
+MIN_SOC = 0.2
+
+# LCOE settings
+
+LIFETIME_YEARS = 25
+DISCOUNT_RATE = 0.07  # AEMC uses 6-8.5% for all technologies

@@ -7,7 +7,7 @@ modelling battery operation, load flexibility, and calculating bills.
 
 # Install
 
-Create a Python new virtual environment and install the required dependencies, in the terminal:
+Create a Python new virtual environment and install the required dependencies. In the terminal:
 
 1. Move to tool directory: ```cd /path/to/the/ppa_analysis/directory```
 2. Create python virtual environment: ```python -m venv env```
@@ -31,7 +31,12 @@ The notebook [data_loading.ipynb](data_loading.ipynb)
 
 # Bring your own load data
 
-Add description of load data format required, and where to put data so the interface can find it.
+When using the interface.ipynb user's can use their own load data by adding a CSV containing the load data to the 
+directory data_caches/c_and_i_customer_loads. Default expected format of the load data is one column named 'TS'
+containing time stamps, and another named 'Load' containing the consumption in kWh for the period ending on the
+time stamp. The expected format of the time stamp is day-month-year format, with various options like 
+"DD-MM-YY HH:MM:SS" or "DD/MM/YY HH:MM:SS" being acceptable. The expected format can also be adjusted using the 
+ppa_analysis/advanced_settings.py module.
 
 # Documentation
 
@@ -39,6 +44,7 @@ Add description of load data format required, and where to put data so the inter
 
 Provided in docstrings in the core tool modules, which are listed here along with the functionality each module 
 provides:
+
     - ppa_analysis/import_data: preparing data
     - ppa_analysis/hybrid: contract portfolio optimisation
     - ppa_analysis/battery: battery optimisation to minimise cost of load not met by renewables
@@ -47,13 +53,15 @@ provides:
 
 ## Examples
 
-In [example.ipynb](example.ipynb) a simple example using a single day of data demonstrates the tools functionality, 
-similar to interface.ipynb, but without the input widgets so the user can see clearly how to use the tools through its 
-Pyhton API.
+In [api_examples.ipynb](api_examples.ipynb) a simple example using a single month of data demonstrates the tools 
+functionality, similar to interface.ipynb, but without the input widgets so the user can see clearly how to use 
+the tools through its Python API.
 
 ## Glossary
 
 The [glossary](glossary.md) provides definitions of key terms including contract types.
+
+# Functionality overview
 
 # Acknowledgements
 

@@ -1,3 +1,26 @@
+"""
+Functions for reading load data files getting NEM generation, spot price, and emissions data.
+
+Generation load functions:
+    - get_load_data: reads load data from disk
+
+Generation data functions:
+    - get_generation_data: downloads and returns timeseries generation data for specified technologies
+    - get_preprocessed_gen_data: reads from disk generation data in the format produced by get_generation_data and
+        reformats for compatibility with ppa analysis work flow
+    - get_generator_options: gets the list of generators in a data file saved to disk in the format produced by
+        get_generation_data.
+
+Emissions data functions:
+    - get_avg_emissions_intensity: downloads and returns timeseries emission intensity data.
+    - get_preprocessed_avg_intensity_emissions_data: reads from disk generation data in the format produced by
+      get_avg_emissions_intensity
+
+Price data functions:
+    - get_wholesale_price_data: downloads and returns timeseries wholesale spot price data.
+    - get_preprocessed_price_data: reads from disk generation data in the format produced by
+      get_wholesale_price_data
+"""
 from datetime import datetime
 
 import nemed
@@ -8,9 +31,6 @@ from ppa_analysis import helper_functions
 from ppa_analysis.helper_functions import get_interval_length, _check_interval_consistency, _check_missing_data
 
 
-# Fetch the generation data using NEMOSIS: this function acts as a wrapper that
-# filters for region and technology type, and checks the earliest data for each
-# matching generator against start date.
 def get_generation_data(
         cache:str,
         technology_type_s:list[str],
@@ -18,13 +38,34 @@ def get_generation_data(
         end_date:pd.Timestamp,
         period:str='H'
         ) -> pd.DataFrame:
+    """
+    Downloads and process generation data from AEMO.
+
+    Fetches generation from AEMO using data using the NEMOSIS package, then filters for region and technology type,
+    resample the data according to the specified period and converts from MW to MWH. Also, checks the earliest data for
+    each matching generator against start date, filtering out generators where data starts after the start date to make
+    sure only generators with data for the whole time period are returned.
+
+    :param cache: str, the directory where raw data from AEMO file are to be cached (required by NEMOSIS).
+    :param technology_type_s: list[str], technologies type to fetch generation data for.
+    :param start_date: str, '%Y/%m/%d %H:%M:%S', start time to return data from.
+    :param end_date: str, '%Y/%m/%d %H:%M:%S', end time to return data uptill.
+    :param period: periodicity to resample data to, 'H' for hourly, '30min' for half-hourly, etc. Original is 5minutely,
+        so resample should be '5min' or greater.
+    :return: pd.Dataframe, with columns:
+        - 'DateTime': the datetime at the end of the period.
+        - 'UNIT': combines unit DUID and technology type into a label of format '<DUID>: <technology type>'
+        - 'REGIONID': specifies where the generator is located.
+        - 'SCADAVALUE': number of MWh generated in the time period.
+
+    """
 
     # First: get the static table for generators and scheduled loads. This is used
     # to filter for generators by region and type.
     # Credit for example code snippets: https://github.com/UNSW-CEEM/NEMOSIS/blob/master/examples/generator_bidding_data.ipynb (Nick Gorman)
     dispatch_units = static_table(table_name='Generators and Scheduled Loads',
-                                raw_data_location=cache,
-                                update_static_file=True)
+                                  raw_data_location=cache,
+                                  update_static_file=True)
 
     # Get only relevant columns
     dispatch_units = dispatch_units[['Station Name', 'Region', 'Technology Type - Descriptor', 'DUID']]
@@ -73,7 +114,8 @@ def get_generation_data(
             if _check_interval_consistency(scada_data_gen, int_length):
                 # Convert from MW to MWh:
                 scada_data_gen['SCADAVALUE'] *= (int_length / 60)
-                scada_data_gen['SCADAVALUE'] = scada_data_gen.resample(period).sum(numeric_only=True)
+                scada_data_gen['SCADAVALUE'] = scada_data_gen.resample(period, label='right', closed='right').sum(
+                    numeric_only=True)
 
                 # Check to make sure that the earliest data for each gen start at or before
                 # the load start date.
@@ -94,6 +136,15 @@ def get_generation_data(
 
 
 def get_preprocessed_gen_data(file, regions):
+    """
+    Read data returned by get_generation_data saved to disk in parquet format, additionally filter by region and
+    reformat such that UNIT names are columns names.
+
+    :param file: str or pathlib.Path, path to file of saved parquet file.
+    :param regions: list[str], regions to filter data by.
+    :return: pd.Dataframe containing unit generation time series data, with a datetime index, and columns for each unit
+        formated like '<DUID>: <technology type>.
+    """
     gen_data = pd.read_parquet(file)
     gen_data = gen_data[gen_data['REGIONID'].isin(regions)]
     gen_data['UNIT'] = gen_data['UNIT'].str.upper()
@@ -102,6 +153,14 @@ def get_preprocessed_gen_data(file, regions):
 
 
 def get_generator_options(file, regions):
+    """
+    Fetches the list of generators with in a DataFrame returned by get_generation_data and saved to disk in parquet
+    format, and additionally filter by region.
+
+    :param file: str or pathlib.Path, path to file of saved parquet file.
+    :param regions: list[str], regions to filter data by.
+    :return:list[str] of unit names in the format '<DUID>: <technology type>'.
+    """
     gen_data = pd.read_parquet(file)
     gen_data = gen_data[gen_data['REGIONID'].isin(regions)]
     gen_data['UNIT'] = gen_data['UNIT'].str.upper()
@@ -109,35 +168,45 @@ def get_generator_options(file, regions):
     return gen_options
 
 
-# -------------------------------- Get Load Data -------------------------------
-#   - check dtypes of columns - should all be float, except datetime col.
-#   - update colname(s)
-#   - set datetime index
-#   - get interval length
-#   - check for NaN/missing data
-# Must be given in MWh!!
 def get_load_data(
     load_file_name:str,
     datetime_col_name:str,
     load_col_name:str,
     day_first:bool,
+    units:str='kWh',
     period:str='H'
 ) -> tuple[pd.DataFrame, pd.Timestamp, pd.Timestamp]:
+    """
+    Reads load data saved to disk in CSV format and carries out data preprocessing.
+
+        - CSV should have two columns, one specifying the datetime and the other load volume in kWh or MWh. Datetime can
+          be in a variety of formats that pandas will automatically pass.
+        - load data will be processed to replace NaN and negative values with zeros.
+        - load data will be resampled according to the specified period
+
+    :param load_file_name: str or pathlib.Path, path to file of saved CSV file.
+    :param datetime_col_name: str, name of column with datetime data.
+    :param load_col_name: str, name of column with load data.
+    :param day_first: bool, specify if the day comes at the start of the datetime format.
+    :param units: the units that the load data is in should be 'kWh' or 'MWh', default is 'kWh'.
+    :param period: periodicity to resample data to, 'H' for hourly, '30min' for half-hourly, etc. Original is 5minutely,
+        so resample should be '5min' or greater.
+    :return: tuple(pd.DataFrame, datetime, datetime)
+        - DataFrame with datetime index at periodicity specified by the period argument, and the column 'Load'
+          specifying the load in MWh for the period.
+        - the first datetime in the data
+        - the last datetime in the data
+    """
 
     load_data = pd.read_csv(load_file_name)
     load_data = load_data.rename(columns={datetime_col_name: 'DateTime', load_col_name : 'Load'})
     load_data['Load'] = pd.to_numeric(load_data['Load'], errors='coerce')
 
+    if units == 'kWh':
+        load_data['Load'] = load_data['Load']/1000.0
+
     # TODO: consider re-formatting datetime col here for consistency
     load_data['DateTime'] = pd.to_datetime(load_data['DateTime'], infer_datetime_format=True, dayfirst=day_first)
-
-    # check all intervals are same length here:
-    ## CHANGED ASSUMPTION: EVERYTHING NOW GOES TO HOURLY INTERVALS
-    # interval = get_interval_length(load_data)
-
-    # if not _check_interval_consistency(load_data, interval):
-    #     print('Time intervals are not consistent throughout dataset. Resampling to 30 minutes.\n')
-    #     load_data = load_data.resample('30min').sum(numeric_only=True)
 
     load_data = load_data.set_index('DateTime')
 
@@ -147,7 +216,7 @@ def get_load_data(
     # Finally make sure no outliers or values that don't make sense (negative)
     load_data = load_data.clip(lower=0.0)
 
-    load_data = load_data.resample(period).sum(numeric_only=True)
+    load_data = load_data.resample(period, label='right', closed='right').sum(numeric_only=True)
 
     start_date = load_data.first_valid_index()
     end_date = load_data.last_valid_index()
@@ -166,13 +235,28 @@ def get_load_data(
 # the chance of making unnecessary calls to nemed.
 
 # TODO: add check for regions - make sure it's always passed a LIST.
-def get_avg_emissions_intensity(
+def get_avg_emissions_intensity_data(
         start_date:pd.Timestamp,
         end_date:pd.Timestamp,
         cache:str,
         period:str='H'
         ) -> pd.DataFrame:
+    """
+    Downloads and process emissions data from AEMO.
 
+    - Fetches generation from AEMO using data using the NEMED package.
+    - Resamples the data according to the specified period.
+
+    :param start_date: str, '%Y/%m/%d %H:%M:%S', start time to return data from.
+    :param end_date: str, '%Y/%m/%d %H:%M:%S', end time to return data till.
+    :param cache: str, the directory where raw data from AEMO file are to be cached (required by NEMOSIS).
+    :param period: periodicity to resample data to, 'H' for hourly, '30min' for half-hourly, etc. Original is 5minutely,
+        so resample should be '5min' or greater.
+    :return: pd.Dataframe, with:
+        -  a datetime index, specifying the end of the period the data covers.
+        -  a column 'REGIONID' specifying the NEM region and a column 'AEI' specifying the average emissions intensity
+        for the period.
+    """
 
     start_date_str = datetime.strftime(start_date, '%Y/%m/%d %H:%M')
     end_date_str = datetime.strftime(end_date, '%Y/%m/%d %H:%M')
@@ -184,19 +268,14 @@ def get_avg_emissions_intensity(
                                              generation_sent_out=False          # currently NOT considering auxiliary load factors (from static tables)
                                              )
 
-    # Create empty df to fill with columns corresponding to each region, containing the emissions intensity index:
-    # emissions_df = pd.DataFrame()
-    nemed_result = nemed_result.reset_index()
     nemed_result['DateTime'] = pd.to_datetime(nemed_result['TimeEnding'])
     emissions_df = nemed_result.drop(columns=['TimeEnding'])
-    emissions_df = emissions_df.pivot_table(columns='Region', values='Intensity_Index', index='DateTime')
-
-    emissions_df = emissions_df.resample(period).mean(numeric_only=True)
-
-    emissions_df = emissions_df.rename(columns={
-        col : 'AEI: ' + col for col in emissions_df.columns
-    })
-
+    emissions_df = emissions_df.rename(columns={'Region': 'REGIONID'})
+    emissions_df = emissions_df.sort_values(by='DateTime')
+    emissions_df = emissions_df.set_index('DateTime')
+    emissions_df = emissions_df.groupby("REGIONID").resample(
+        period, label='right', closed='right').mean(numeric_only=True).reset_index(level="REGIONID")
+    emissions_df = emissions_df.rename(columns={'Intensity_Index': 'AEI'})
     return emissions_df
 
 
@@ -222,7 +301,7 @@ def get_marginal_emissions_intensity(start, end, cache, regions, period=None):
     #     min_period = '5T'
 
     if period != None:
-        emissions_df = emissions_df.set_index('DateTime').resample(period).mean()
+        emissions_df = emissions_df.set_index('DateTime').resample(period, label='right', closed='right').mean()
         emissions_df = emissions_df.reset_index()
 
     return emissions_df
@@ -241,20 +320,42 @@ def get_both_emissions(start, end, cache, regions, period=None):
     return emissions_df
 
 
-def get_preprocessed_avg_intensity_emissions_data(file, regions):
+def get_preprocessed_average_emissions_intensity_data(file, region):
+    """
+    Read data returned by get_avg_emissions_intensity saved to disk in parquet format, and additionally filter by region.
+
+    :param file: str or pathlib.Path, path to file of saved parquet file.
+    :param region: str, region's data to return.
+    :return: pd.Dataframe containing regional emissions time series data, with a datetime index,
+     and columns named 'AEI' containing the average emission intensity data.
+    """
     emissions_data = pd.read_parquet(file)
-    regions = list(set(regions))
-    emissions_data = emissions_data.loc[:, ['AEI: ' + region for region in regions]]
+    emissions_data = emissions_data[emissions_data['REGIONID']==region].copy()
+    emissions_data = emissions_data.loc[:, ['AEI']]
     return emissions_data
 
 
-# Wrapper function to import dispatch pricing data using NEMOSIS (credit: Nick Gorman).
 def get_wholesale_price_data(
     start_date:pd.Timestamp,
     end_date:pd.Timestamp,
     cache:str,
     period:str='H'
 ) -> pd.DataFrame:
+    """
+    Downloads and process wholesale spot price data from AEMO.
+
+    - Fetches generation from AEMO using data using the NEMOSIS package.
+    - Resamples the data according to the specified period.
+
+    :param start_date: str, '%Y/%m/%d %H:%M:%S', start time to return data from.
+    :param end_date: str, '%Y/%m/%d %H:%M:%S', end time to return data till.
+    :param cache: str, the directory where raw data from AEMO file are to be cached (required by NEMOSIS).
+    :param period: periodicity to resample data to, 'H' for hourly, '30min' for half-hourly, etc. Original is 5minutely,
+        so resample should be '5min' or greater.
+    :return: pd.Dataframe, with:
+        -  a datetime index, specifying the end of the period the data covers.
+        -  a column 'REGIONID' specifying the NEM region and a column 'RRP' specifying average price for the period
+    """
 
     start_date_str = datetime.strftime(start_date, '%Y/%m/%d %H:%M:%S')
     end_date_str = datetime.strftime(end_date, '%Y/%m/%d %H:%M:%S')
@@ -267,33 +368,25 @@ def get_wholesale_price_data(
                                    fformat='parquet',
                                    keep_csv=False
                                    )
-
-    price_data = price_data.reset_index()
     price_data['DateTime'] = pd.to_datetime(price_data['SETTLEMENTDATE'])
     price_data = price_data.drop(columns=['SETTLEMENTDATE'])
-    price_data = price_data.pivot_table(columns='REGIONID', values='RRP', index='DateTime')
-    price_data = price_data.resample(period).mean(numeric_only=True)
-
-    price_data = price_data.rename(columns={
-        col : 'RRP: ' + col for col in price_data.columns
-    })
-
+    price_data = price_data.sort_values(by='DateTime')
+    price_data = price_data.set_index('DateTime', drop=True)
+    price_data = price_data.groupby("REGIONID").resample(
+        period, label='right', closed='right').mean(numeric_only=True).reset_index(level="REGIONID")
     return price_data
 
 
-# Wrapper function to import pre-dispatch pricing data using NEMSEER (credit: Abhijith Prakash)
-def get_predispatch_prices(
-    start_date:pd.Timestamp,
-    end_date:pd.Timestamp,
-    cache:str,
-    regions:list[str],
-    period:str='H'
-) -> pd.DataFrame:
-    return
+def get_preprocessed_price_data(file, region):
+    """
+    Read data returned by get_wholesale_price_data saved to disk in parquet format, and additionally filter by region.
 
-
-def get_preprocessed_price_data(file, regions):
+    :param file: str or pathlib.Path, path to file of saved parquet file.
+    :param region: str, the region's data to return.
+    :return: pd.Dataframe containing regional wholesale spot price data, with a datetime index,
+     and columns named 'RRP' containing the price data ($/MWh).
+    """
     price_data = pd.read_parquet(file)
-    regions = list(set(regions))
-    price_data = price_data.loc[:, ['RRP: ' + region for region in regions]]
+    price_data = price_data[price_data['REGIONID']==region].copy()
+    price_data = price_data.loc[:, ['RRP']]
     return price_data

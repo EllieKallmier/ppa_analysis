@@ -1,29 +1,61 @@
 import pandas as pd
 import numpy as np
-from mip import Model, xsum, minimize, CONTINUOUS, BINARY, OptimizationStatus
+from mip import Model, xsum, minimize, CONTINUOUS, BINARY, OptimizationStatus, CBC, GUROBI
+
+from ppa_analysis import advanced_settings
 
 
-# TODO: add documentation!!
 def run_battery_optimisation(
-        df:pd.DataFrame,
-        load_col_to_use:str,
-        region:str,
+        timeseries_data:pd.DataFrame,
         rated_power_capacity:float,
         size_in_mwh:float,
         charging_efficiency:float=0.9,
         discharging_efficiency:float=0.88
 ) -> pd.DataFrame:
+    """
+    Optimises battery dispatch to minimise cost of purchasing energy not covered by a PPA at the wholesale spot price.
+
+    Optimises battery dispatch to store excess energy purchased through a PPA for use at times when the PPA energy is
+    not sufficient to cover the load. Charging and discharging decisions are made to minimise the cost of purchasing
+    additional energy to meet the load at the wholesale spot price. Optimisation is performed using mixed integer linear
+    programing.
+
+    :param timeseries_data: pd.DataFrame containing the load, generation, and price timeseries data. Needs to contain
+        columns 'Load' (MWh), 'Contracted Energy' (MWh, the energy being purchased from renewable energy generators
+        through the PPA), and a wholesale price column named 'RRP' ($/MWh). The data is assumed to be sorted in
+        sequential order and be hourly interval data.
+    :param rated_power_capacity: float, the maximum discharging and charging rate of the battery in MW.
+    :param size_in_mwh: float, the volume of energy that can be stored in the battery, in MWh. Note, however that the
+        optimisation will not fully charge or discharge the battery to minimise degradation, the default limits on the
+        state of charge are 20% to 80%, but can be configured in advanced_settings.py, see MIN_SOC and MAX_SOC.
+    :param charging_efficiency: float, between 0.0 and 1.0, the fraction of energy which the battery draws from the grid
+        that is stored.
+    :param discharging_efficiency: float, between 0.0 and 1.0, the fraction of energy which when drawn from the battery
+        is delivered to the grid.
+    :return: pd.DataFrame, the timeseries data supplied with an additional column 'Load with battery' specifying the
+        load after adding the battery charging and discharging.
+    """
     
     # Get the useful traces first - it depends a bit on the order of operations
     # but the load to be used here will either just be 'Load' or 'Shifted load' ??
-    wholesale_prices = df[f'RRP: {region}'].clip(lower=1.0).values
-    excess_load = np.maximum(df[load_col_to_use] - df['Contracted Energy'], 0).values
-    excess_gen = np.maximum(df['Contracted Energy'] - df[load_col_to_use], 0).values
+    wholesale_prices = timeseries_data['RRP'].clip(lower=1.0).values
+    excess_load = np.maximum(timeseries_data['Load'] -
+                             timeseries_data['Contracted Energy'], 0).values
+    excess_gen = np.maximum(timeseries_data['Contracted Energy'] -
+                            timeseries_data['Load'], 0).values
 
-    min_soe = size_in_mwh * 0.2
-    max_soe = size_in_mwh * 0.8
+    min_soe = size_in_mwh * advanced_settings.MIN_SOC
+    max_soe = size_in_mwh * advanced_settings.MAX_SOC
 
-    m = Model()
+    if advanced_settings.solver == 'GUROBI':
+        solver = GUROBI
+    elif advanced_settings.solver == 'CBC':
+        solver = CBC
+    else:
+        raise ValueError(f'Solver name {advanced_settings.solver} not recognised.')
+
+    m = Model(solver_name=solver)
+
     I = range(len(excess_load))
 
     battery_discharge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in I]
@@ -66,7 +98,7 @@ def run_battery_optimisation(
     if status == OptimizationStatus.INFEASIBLE:
         print('This battery optimisation was infeasible.')
         m.clear()
-        return df
+        return timeseries_data
 
     if status == OptimizationStatus.FEASIBLE or status == OptimizationStatus.OPTIMAL:
         # get results:
@@ -76,19 +108,19 @@ def run_battery_optimisation(
         charge_coef_result = [charge_coef[i].x for i in I]
         discharge_coef_result = [discharge_coef[i].x for i in I]
 
-        battery_data = df.copy()
+        battery_data = timeseries_data.copy()
         battery_data['Discharge'] = battery_discharge_result
         battery_data['Charge'] = battery_charge_result
         battery_data['SoE'] = soe_result
         battery_data['P_c'] = charge_coef_result
         battery_data['P_d'] = discharge_coef_result
 
-        battery_data['Load with battery'] = battery_data[load_col_to_use] + \
+        battery_data['Load with battery'] = battery_data['Load'] + \
             battery_data['Charge'] - battery_data['Discharge']
         
         # TODO: add a validation test for this optimisation
-        df['Load with battery'] = battery_data['Load with battery'].copy()
+        timeseries_data['Load with battery'] = battery_data['Load with battery'].copy()
 
         m.clear()
 
-    return df
+    return timeseries_data

@@ -1,23 +1,23 @@
-import numpy as np
-from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS, CBC
-from ppa_analysis.helper_functions import *
-from ppa_analysis import advanced_settings
-
-
 """
-This module is used for calculating the optimal contracting mix from a set of renewable energy generators, 
-given a load profile, a set of generation profiles, generator LCOEs, wholesale prices, a contract type, and other 
-settings as specified in the relevant function's interfaces. Broadly speaking, the optimisation attempts to match the 
-combined renewable energy generation profile to the load profile, by optimising the percentage of each generator's 
+This module is used for calculating the optimal contracting mix from a set of renewable energy generators,
+given a load profile, a set of generation profiles, generator LCOEs, wholesale prices, a contract type, and other
+settings as specified in the relevant function's interfaces. Broadly speaking, the optimisation attempts to match the
+combined renewable energy generation profile to the load profile, by optimising the percentage of each generator's
 capacity to contract. However, the specific methodology differs for each contract type and is best understood by
 reading the documentation for both the contract specific functions (see names below), and the run_hybrid_optimisation
 documentation.
 
 Basic usage for the module is through the function hybrid.create_hybrid_generation, which calls one the functions
-hybrid_pac, hybrid_shaped, hybrid_baseload, or hybrid_247 to implement the optimisation for the corresponding contract 
-type. Note these contract specific functions can also be used directly if desired. Lastly, run_hybrid_optimisation 
-performs the optimisation, and may be useful to the advanced user who want to implement a customised methodology.  
+hybrid_pac, hybrid_shaped, hybrid_baseload, or hybrid_247 to implement the optimisation for the corresponding contract
+type. Note these contract specific functions can also be used directly if desired. Lastly, run_hybrid_optimisation
+performs the optimisation, and may be useful to the advanced user who want to implement a customised methodology.
 """
+
+
+import numpy as np
+from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS, CBC, GUROBI
+from ppa_analysis.helper_functions import *
+from ppa_analysis import advanced_settings
 
 
 def run_hybrid_optimisation(
@@ -97,7 +97,15 @@ def run_hybrid_optimisation(
     R = range(len(contracted_energy))       # how many time intervals in total
     G = range(len(generation_data.columns))         # how many columns of generators
 
-    m = Model(solver_name=CBC)
+    if advanced_settings.solver == 'GUROBI':
+        solver = GUROBI
+    elif advanced_settings.solver == 'CBC':
+        solver = CBC
+    else:
+        raise ValueError(f'Solver name {advanced_settings.solver} not recognised.')
+
+    m = Model(solver_name=solver)
+
     percent_of_generation = {}
     # Add a 'percentage' variable for each generator
     for g in G:
@@ -167,9 +175,9 @@ def run_hybrid_optimisation(
         for g in G:
             name = gen_names[str(g)]
             details = {
-                'Percent of generator output' : round(percent_of_generation[str(g)].x*100, 1),
-                'Percent of hybrid trace' : round(
-                    sum(percent_of_generation[str(g)].x * gen_data_series[str(g)]) / sum(hybrid_trace['Hybrid']) * 100, 1)
+                'Percent of generator output': percent_of_generation[str(g)].x*100,
+                'Percent of hybrid trace':
+                    sum(percent_of_generation[str(g)].x * gen_data_series[str(g)]) / sum(hybrid_trace['Hybrid']) * 100
             }
 
             results[name] = details
@@ -199,10 +207,8 @@ def run_hybrid_optimisation(
 def hybrid_shaped(
         contracted_amount:float, 
         df:pd.DataFrame,
-        region:str,
         generator_info:dict[str:float],
         redef_period:str,
-        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -211,12 +217,13 @@ def hybrid_shaped(
 
     Calls hybrid.run_hybrid_optimisation to perform the optimisation with specific settings for the 'Shaped'
     contract. When calling run_hybrid_optimisation:
-        - the contracted_energy parameter is set to an artificial load profile created by using the load percentile
+        - the contracted_energy parameter is set to the load profile.
+        - the generation_data parameter is set to artificial generation profiles created by using the percentile
           value (given in percentile_val) on a yearly, quarterly, or monthly basis according to the redef_period
-          ('Y', 'Q', 'M'), e.g. in the quarterly case with percentile_val=50, an hourly load profile would be created
-          where the demand value for each hour was equal to the quarter's median demand.
+          ('Y', 'Q', 'M'), e.g. in the quarterly case with percentile_val=0.5, an hourly generation profile would be
+          created for each generator where the generation value for each hour was equal to the quarter's median
+          generation for that hour of the day.
         - total_sum is set to the sum of load volume across the first year (not adjusted by contract_amount).
-        - the contract type is set to 'Baseload'
         - and wholesale price data and generation data is passed to run_hybrid_optimisation as provided in
           time_series_data
 
@@ -226,9 +233,8 @@ def hybrid_shaped(
         aim to provide with contracted renewable generation.
     :param time_series_data: pd.DataFrame with columns specifying load volume, generation volume, and regional
         wholesale prices on a timeseries basis. The load columns should be named 'Load', generation volume columns
-        should be named with a generator name that matches the names provided in generator_info, and
-        wholesale price columns named like 'RRP: NSW1'.
-    :param region: str, the region whose wholesale price to use in the optimisation.
+        should be named with a generator name that matches the names provided in generator_info, and a column
+        named 'RRP' contain wholesale spot price data.
     :param generator_info: A dictionary specifying the LCOE of each generator. Keys should be generator names as
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param redef_period: str, period over which to average the load to determine the base load, should be one of
@@ -291,7 +297,7 @@ def hybrid_shaped(
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year_load,
-        wholesale_prices=first_year[f'RRP: {region}'].copy(),
+        wholesale_prices=first_year['RRP'].copy(),
         generation_data=shaped_first_year.copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
@@ -324,10 +330,8 @@ def hybrid_shaped(
 def hybrid_baseload(
         contracted_amount:float, 
         df:pd.DataFrame,
-        region:str,
         generator_info:dict[str:float],
         redef_period:str,
-        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -340,7 +344,6 @@ def hybrid_baseload(
           load profile on a yearly, quarterly, or monthly basis according to the redef_period ('Y', 'Q', 'M'). After
           averaging the profile is then adjusted by the contracted_amount parameter.
         - total_sum is set to the sum of load volume across the first year (not adjusted by contract_amount).
-        - the contract type is set to 'Baseload'
         - and wholesale price data and generation data is passed to run_hybrid_optimisation as provided in
           time_series_data
 
@@ -350,9 +353,8 @@ def hybrid_baseload(
         aim to provide with contracted renewable generation.
     :param time_series_data: pd.DataFrame with columns specifying load volume, generation volume, and regional
         wholesale prices on a timeseries basis. The load columns should be named 'Load', generation volume columns
-        should be named with a generator name that matches the names provided in generator_info, and
-        wholesale price columns named like 'RRP: NSW1'.
-    :param region: str, the region whose wholesale price to use in the optimisation.
+        should be named with a generator name that matches the names provided in generator_info, and a column
+        named 'RRP' contain wholesale spot price data.
     :param generator_info: A dictionary specifying the LCOE of each generator. Keys should be generator names as
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param redef_period: str, period over which to average the load to determine the base load, should be one of
@@ -417,7 +419,7 @@ def hybrid_baseload(
     
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year['Contracted Energy'].copy(),
-        wholesale_prices=first_year[f'RRP: {region}'].copy(),
+        wholesale_prices=first_year['RRP'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load.sum(numeric_only=True),
@@ -439,10 +441,8 @@ def hybrid_baseload(
 def hybrid_247(
         contracted_amount:float, 
         df:pd.DataFrame,
-        region:str,
         generator_info:dict[str:float],
         redef_period:str,
-        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -454,7 +454,6 @@ def hybrid_247(
         - the contracted_energy parameter is set to the load profile (not adjusted by the contracted_amount parameter)
         - total_sum is set to the sum of load volume across the first year (not adjusted by contract_amount).
         - cfe_score_min is set to the contracted amount.
-        - the contract type is set to '24/7'
         - and wholesale price data and generation data is passed to run_hybrid_optimisation as provided in
           time_series_data
 
@@ -464,9 +463,8 @@ def hybrid_247(
         aim to provide with contracted renewable generation.
     :param time_series_data: pd.DataFrame with columns specifying load volume, generation volume, and regional
         wholesale prices on a timeseries basis. The load columns should be named 'Load', generation volume columns
-        should be named with a generator name that matches the names provided in generator_info, and
-        wholesale price columns named like 'RRP: NSW1'.
-    :param region: str, the region whose wholesale price to use in the optimisation.
+        should be named with a generator name that matches the names provided in generator_info, and a column
+        named 'RRP' contain wholesale spot price data.
     :param generator_info: A dictionary specifying the LCOE of each generator. Keys should be generator names as
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param redef_period: str, not used, included to simplify control logic in hybrid.create_hybrid_generation.
@@ -503,7 +501,7 @@ def hybrid_247(
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year['Load'].copy(),
-        wholesale_prices=first_year[f'RRP: {region}'].copy(),
+        wholesale_prices=first_year['RRP'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
@@ -524,10 +522,8 @@ def hybrid_247(
 def hybrid_pap(
         contracted_amount:float,
         time_series_data:pd.DataFrame,
-        region:str,
         generator_info:dict[str:float],
         redef_period:str,
-        interval:str,
         percentile_val:float
 ) -> pd.DataFrame:
     """
@@ -539,7 +535,6 @@ def hybrid_pap(
         - the contracted_energy parameter is set to the load profile (not adjusted by the contracted_amount parameter)
         - total_sum is set to the sum of load volume across the first year of load data multiplied by the
           contracted_amount percentage.
-        - the contract type is set to 'Pay as produced'
         - and wholesale price data and generation data is passed to run_hybrid_optimisation as provided in
           time_series_data
 
@@ -549,9 +544,8 @@ def hybrid_pap(
         aim to provide with contracted renewable generation.
     :param time_series_data: pd.DataFrame with columns specifying load volume, generation volume, and regional
         wholesale prices on a timeseries basis. The load columns should be named 'Load', generation volume columns
-        should be named with a generator name that matches the names provided in generator_info, and
-        wholesale price columns named like 'RRP: NSW1'.
-    :param region: str, the region whose wholesale price to use in the optimisation.
+        should be named with a generator name that matches the names provided in generator_info, and a column
+        named 'RRP' contain wholesale spot price data.
     :param generator_info: A dictionary specifying the LCOE of each generator. Keys should be generator names as
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param redef_period: str, not used, included to simplify control logic in hybrid.create_hybrid_generation.
@@ -589,7 +583,7 @@ def hybrid_pap(
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year_load,
-        wholesale_prices=first_year[f'RRP: {region}'].copy(),
+        wholesale_prices=first_year['RRP'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
@@ -610,10 +604,8 @@ def hybrid_pap(
 def hybrid_pac(
         contracted_amount: float,
         time_series_data: pd.DataFrame,
-        region: str,
         generator_info: dict[str:float],
         redef_period: str,
-        interval:str,
         percentile_val: float
 ) -> pd.DataFrame:
     """
@@ -625,7 +617,6 @@ def hybrid_pac(
         - the contracted_energy parameter is set to the load profile (not adjusted by the contracted_amount parameter)
         - total_sum is set to the sum of load volume across the first year of load data multiplied by the
           contracted_amount percentage.
-        - the contract type is set to 'Pay as consumed'
         - and wholesale price data and generation data is passed to run_hybrid_optimisation as provided in
           time_series_data
 
@@ -635,9 +626,8 @@ def hybrid_pac(
         aim to provide with contracted renewable generation.
     :param time_series_data: pd.DataFrame with columns specifying load volume, generation volume, and regional
         wholesale prices on a timeseries basis. The load columns should be named 'Load', generation volume columns
-        should be named with a generator name that matches the names provided in generator_info, and
-        wholesale price columns named like 'RRP: NSW1'.
-    :param region: str, the region whose wholesale price to use in the optimisation.
+        should be named with a generator name that matches the names provided in generator_info, and a column
+        named 'RRP' contain wholesale spot price data.
     :param generator_info: A dictionary specifying the LCOE of each generator. Keys should be generator names as
         strings and values should be floats specifying the generator LCOE in $/MWh.
     :param redef_period: str, not used, included to simplify control logic in hybrid.create_hybrid_generation.
@@ -675,7 +665,7 @@ def hybrid_pac(
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year['Load'].copy(),
-        wholesale_prices=first_year[f'RRP: {region}'].copy(),
+        wholesale_prices=first_year['RRP'].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
@@ -694,13 +684,11 @@ def hybrid_pac(
 
 def create_hybrid_generation(
         contract_type:str,
-        redef_period:str,
         contracted_amount:float,
         time_series_data:pd.DataFrame,
-        region:str,
         generator_info:dict[str:float],
-        interval:str, # time interval in minutes that data is currently in
-        percentile_val:float
+        redef_period:str = None,
+        percentile_val:float = None
 ) -> pd.DataFrame:
     """
     Calculates the optimal mix of volume to contract from a set of renewable energy generators for a given contract
@@ -717,16 +705,15 @@ def create_hybrid_generation(
 
     :param contract_type: str, used to specify the function used for the optimisation, and also changes some
         behaviour within hybrid.run_hybrid_optimisation.
-    :param redef_period: str, only used for 'Shaped' and 'Baseload' see corresponding functions.
-    :param contracted_amount: float, percentage (fraction between 0.0-1.0) specifying the fraction of load volume to
+    :param contracted_amount: float, percentage (fraction between 0.0-100) specifying the percentage of load volume to
         aim to provide with contracted renewable generation.
     :param time_series_data: pd.DataFrame with columns specifying load volume, generation volume, and regional
         wholesale prices on a timeseries basis. The load columns should be named 'Load', generation volume columns
-        should be named with a generator name that matches the names provided in generator_info, and
-        wholesale price columns named like 'RRP: NSW1'.
-    :param region: str, the region whose wholesale price to use in the optimisation.
+        should be named with a generator name that matches the names provided in generator_info, and a column
+        named 'RRP' contain wholesale spot price data.
     :param generator_info: A dictionary specifying the LCOE of each generator. Keys should be generator names as
         strings and values should be floats specifying the generator LCOE in $/MWh.
+    :param redef_period: str, only used for 'Shaped' and 'Baseload' see corresponding functions.
     :param percentile_val: str, the percentile value to take in each period (yearly, quarterly, monthly) when
         creating the artificial load profile for optimisation, as explained above.
     :return:
@@ -754,7 +741,7 @@ def create_hybrid_generation(
         raise ValueError(f'contract_type must be one of {valid_contracts}')
     
     valid_periods = {'M', 'Q', 'Y'}
-    if redef_period not in valid_periods:
+    if redef_period not in valid_periods and contract_type in ['Shaped', 'Baseload']:
         raise ValueError(f'redef_period must be one of {valid_periods}')
 
     opt_hybrid_funcs = {
@@ -766,6 +753,6 @@ def create_hybrid_generation(
     }
 
     df_with_hybrid = opt_hybrid_funcs[contract_type](
-        contracted_amount, time_series_data, region, generator_info, redef_period, interval, percentile_val)
+        contracted_amount, time_series_data, generator_info, redef_period, percentile_val)
 
     return df_with_hybrid

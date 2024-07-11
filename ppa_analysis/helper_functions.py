@@ -39,6 +39,7 @@ def get_interval_length(df:pd.DataFrame) -> int:
         print('Interval lengths are different throughout dataset.\n')
         return int(first_int.total_seconds() / 60)
 
+
 def _check_interval_consistency(df:pd.DataFrame, mins:int) -> tuple[bool, pd.Timestamp]:
     df = df.copy().reset_index()
     return (df['DateTime'].diff() == timedelta(minutes=mins)).iloc[1:].all()
@@ -204,6 +205,43 @@ def get_data_years(cache_directory):
     years_with_complete_data = [year for (year, count) in year_counts.items() if count >= 3]
     return years_with_complete_data
 
+
+# Calculate LCOE from user inputs/predetermined values
+# Function takes in the  generator LCOE info dictionary, and calculates LCOE
+# for only one generator with each call.
+# Returns LCOE value in $/MW
+def calculate_lcoe(
+        generator_info: dict[str:object]
+) -> float:
+    # Baseline assumptions:
+
+
+    capital_cost = generator_info['Capital ($/kW)']
+    numerator, denominator = 0, 0
+    for year in range(1, advanced_settings.LIFETIME_YEARS + 1):
+        kwh_in_year_n = generator_info['Capacity Factor'] * (365 * 24) # Note: this doesn't currently account for leap years!
+        numerator += (generator_info['Fixed O&M ($/kW)']
+                      + generator_info['Variable O&M ($/kWh)'] * kwh_in_year_n) / \
+                     ((1 + advanced_settings.DISCOUNT_RATE) ** year)
+        denominator += (kwh_in_year_n) / ((1 + advanced_settings.DISCOUNT_RATE) ** year)
+    numerator += capital_cost
+
+    return (numerator / denominator) * 1000
+
+
+# ----- Fetch inputs and set up info_dict data to pass to later functions:
+def get_all_lcoes(
+        generator_data_editor: dict[str:dict[str:object]]
+) -> dict[str:float]:
+    all_generator_lcoes = {}
+    for gen, gen_info in generator_data_editor.items():
+        if gen != 'out':
+            gen_lcoe = calculate_lcoe(gen_info)
+            all_generator_lcoes[gen] = gen_lcoe
+
+    return all_generator_lcoes
+
+
 # TODO: Ellie to add docstrings here
 # Helper function to read in json files (for network tariff selection)
 def read_json_file(filename):
@@ -227,6 +265,7 @@ def get_seasons(
 
     return seasonal_load_and_gen
 
+
 # Helper function: get weekday/weekends
 # Sets regional public holidays as 'weekend' alongside Sat/Sun
 def get_weekends(load_and_gen, region):
@@ -246,6 +285,7 @@ def get_weekends(load_and_gen, region):
     weekend_load_and_gen = weekend_load_and_gen.drop(columns=['Date', 'Weekday'])
 
     return weekend_load_and_gen
+
 
 # Format other charges: used to re-format "other_charges" collected from user input widgets.
 # Re-formats to match required structure for sunspot bill_calculator.
