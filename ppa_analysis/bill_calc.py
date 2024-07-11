@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import sunspot_bill_calculator
+from ppa_analysis import helper_functions
 
 """
 Module containing functions for calculating the components of bills associated with PPA contracts. The functionality is
@@ -193,8 +195,61 @@ def calculate_ppa(
     return df_resamp
 
 
+def calculate_tariff_bill(
+        load_and_gen_data:pd.DataFrame,
+        settlement_period:str,
+        tariff_details:dict,
+        bill_type:str
+) -> pd.DataFrame:
+    """ 
+    Calculates the costs associated with energy use under either Network or Retail tariffs.
+
+    The network bill is calculated for all PPA and firming types, and the retail bill is only 
+    applied to energy not provided through the PPA if the firming type chosen is 'Retail'.
+
+    :param load_and_gen_data: Dataframe with datetime index, a column specifying 
+        the load (MWh) named 'Load' and, if bill_type == 'Retail' also a column specifying the load in intervals where the load is higher than the contracted energy (MWh) named 'Unmatched Energy'.
+    :param settlement_period: str, The settlement period as a str in the pandas 
+        period alias format e.g. 'Y' for yearly, 'Q' for quarterly and 'M' for monthly.
+    :param tariff_details: dict containing two tariff structures labelled by the 
+        keys 'Network' and 'Retail'. The tariff structures are nested dictionaries containing tariff components defined by the user selected network tariff.
+    :param bill_type: str, one of 'Network' or 'Retail'. Indicates which tariff 
+        to apply in the bill calculation and which energy trace to apply the calculation to, as above.
+    :return: Results are returned in a dataframe on settlement period basis with 
+        the index specifying the end of the settlement period and the column '{bill_type} Bill ($)' specifying the cost of the energy defined by bill_type.
+    """
+    resampled_load_index = load_and_gen_data.copy().resample(settlement_period).sum(numeric_only=True)
+    resampled_load_index = resampled_load_index.index
+
+    # Load in all the tariffs and find the selected tariff (network charges):
+    tariff_bill_results = pd.DataFrame(index=resampled_load_index, columns=[f'{bill_type} Bill ($)'])
+
+    if bill_type == 'Retail':
+        col_name_to_calc = 'Unmatched Energy'
+    else:
+        col_name_to_calc = 'Load'
+    
+    selected_tariff = tariff_details[bill_type]
+
+    # Separate out the firming energy as a new column (to apply retail charges onto):
+    remainder = load_and_gen_data.copy()
+    for end_date in resampled_load_index:
+        load_chunk, remainder = helper_functions.get_load_data_chunk(remainder, end_date)
+        load_chunk[col_name_to_calc] *= 1000  # convert the load data to kWh from MWh
+        load_chunk = load_chunk.reset_index()
+
+        # network charges applied to all load:
+        network_load = load_chunk[['DateTime',col_name_to_calc]].copy()\
+            .rename(columns={'DateTime':'TS', col_name_to_calc:'kWh'})
+        network_bill = sunspot_bill_calculator.bill_calculator(network_load, selected_tariff, None, False)
+        tariff_bill_results.loc[end_date, f'{bill_type} Bill ($)'] = float(network_bill['Retailer']['Bill'][0])
+
+    return tariff_bill_results
+
 def calculate_firming(
         volume_and_price: pd.DataFrame,
+        firming_type:str,
+        tariff_details:dict,
         settlement_period: str,
         load_region:str
 ) -> pd.DataFrame:
@@ -202,13 +257,16 @@ def calculate_firming(
     Calculates the cost associated with buying energy not provided through the PPA.
 
     Firming energy required is calculated on an interval by interval basis as the difference between the 'Load' and the
-    'Contracted Energy' multiplied the 'Firming Costs'. Note firming costs are only applied intervals where the load
+    'Contracted Energy' multiplied by the 'Firming Costs'. Note firming costs are only applied intervals where the load
     is greater than the contracted energy.
 
     :param volume_and_price: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
         a column specifying the contracted energy (MWh) name 'Contracted Energy', and a column specifying the firming
-        price ($/MWh) (name formatted like 'Firming price: NSW1'). An optional column named 'Fixed ($/day)' can be 
-        passed if the firming type is retail tariff with a daily charge.
+        price ($/MWh) (name formatted like 'Firming price: NSW1').
+    :param firming_type: str, one of 'Wholesale exposed', 'Partially wholesale exposed', 'Retail'.
+        Defines the calculation to be performed on the firming energy (load above the contracted energy).
+    :param tariff_details: dict containing two tariff structures labelled by the 
+        keys 'Network' and 'Retail'. The tariff structures are nested dictionaries containing tariff components defined by the user selected network tariff.
     :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yearly, 'Q'
         for quarterly and 'M' for monthly.
     :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
@@ -219,10 +277,15 @@ def calculate_firming(
 
     firming_costs = volume_and_price.copy()
     firming_costs['Unmatched Energy'] = (firming_costs['Load'] - firming_costs['Contracted Energy']).clip(lower=0.0)
-    firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs[f'Firming price: {load_region}']
-    firming_costs = firming_costs.resample(settlement_period).sum(numeric_only=True)
-    if 'Fixed ($/day)' in firming_costs.columns:
-        firming_costs['Firming Costs'] = firming_costs[['Firming Costs', 'Fixed ($/day)']].sum(axis='columns')
+
+    if firming_type == 'Retail':
+        firming_costs = calculate_tariff_bill(firming_costs, settlement_period, tariff_details, 'Retail')
+        firming_costs = firming_costs.rename(columns={f'Retail Bill ($)':'Firming Costs'})
+    else:
+        firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs[f'Firming price: {load_region}']
+
+        firming_costs = firming_costs.resample(settlement_period).sum(numeric_only=True)
+
     return firming_costs
 
 
@@ -421,6 +484,8 @@ def calculate_bill(
         volume_and_price: pd.DataFrame,
         settlement_period: str,
         contract_type: str,
+        firming_type:str,
+        tariff_details:dict,
         load_region: str,
         strike_price: float,
         lgc_buy_price: float = 0.0,
@@ -439,10 +504,11 @@ def calculate_bill(
     Costs are calculated for each component as per the documentation for corresponding function in this module:
         1. PPA settlement costs: calculate_ppa
         2. Firming costs: calculate_firming
-        3. Revenue from on-sold excess RE: calculate_excess_electricity
-        4. Purchase of extra LGCs: calculate_lgcs
-        5. Sale of excess LGCs: calculate_lgcs
-        6. Any shortfall penalty payments for generation: calculate_shortfall
+        3. Network costs: calculate_tariff_bill
+        4. Revenue from on-sold excess RE: calculate_excess_electricity
+        5. Purchase of extra LGCs: calculate_lgcs
+        6. Sale of excess LGCs: calculate_lgcs
+        7. Any shortfall penalty payments for generation: calculate_shortfall
 
     Examples:
 
@@ -463,6 +529,8 @@ def calculate_bill(
     ... volume_and_price=volume_and_price,
     ... settlement_period='M',
     ... contract_type='Pay as Produced',
+    ... firming_type='Wholesale exposed',
+    ... tariff_details={'Retail':{...}, 'Network':{...}},
     ... load_region="NSW1",
     ... strike_price=75.0,
     ... lgc_buy_price=10.0,
@@ -488,7 +556,11 @@ def calculate_bill(
         An optional column named 'Fixed ($/day)' can be passed if the firming type is retail tariff with a daily charge.
     :param settlement_period: The settlement period as a str in the pandas period alias format e.g. 'Y' for yeary, 'Q'
         for quarterly and 'M' for monthly.
-    :param contract_type:
+    :param contract_type: str,
+    :param firming_type: str, one of 'Wholesale exposed', 'Partially wholesale exposed',
+        'Retail'.
+    :param tariff_details: dict containing two tariff structures labelled by the 
+        keys 'Network' and 'Retail'. The tariff structures are nested dictionaries containing tariff components defined by the user selected network tariff.
     :param load_region: The load region as a str e.g. NSW1, QLD1, etc.
     :param strike_price: The strike price of the contract in $/MWh
     :param lgc_buy_price: a float specifying the price ($/MWh) of buying LCGs to meet a deficit.
@@ -505,7 +577,7 @@ def calculate_bill(
     :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
         the settlement period and an additional columns: 'PPA Value' (value of
         contracted energy at the indexed PPA strike price), 'PPA Settlement' (the cost of settling the PPA),
-        'Firming Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs',
+        'Firming Costs', 'Network Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs',
         'Shortfall Payments Received', 'Total'.
     """
     results = pd.DataFrame()
@@ -518,23 +590,27 @@ def calculate_bill(
     results['PPA Final Cost'] = ppa_costs['PPA Final Cost'].copy()
 
     # 2. Firming costs:
-    firming_costs = calculate_firming(volume_and_price, settlement_period, load_region)
+    firming_costs = calculate_firming(volume_and_price, firming_type, tariff_details, settlement_period, load_region)
     results['Firming Costs'] = firming_costs['Firming Costs'].copy()
 
-    # 3. Revenue from on-sold excess RE:
+    # 3. Network costs:
+    network_costs = calculate_tariff_bill(volume_and_price, settlement_period, tariff_details, 'Network')
+    results['Network Costs'] = network_costs['Network Bill ($)'].copy()
+
+    # 4. Revenue from on-sold excess RE:
     excess_val = calculate_excess_electricity(volume_and_price, load_region, settlement_period, excess_price)
     results['Revenue from on-sold RE'] = -1 * excess_val['Excess Energy Revenue'].copy()
 
-    # 4. and 5. Revenue/Cost of LGCs
+    # 5. and 6. Revenue/Cost of LGCs
     lgc_balance = calculate_lgcs(volume_and_price, settlement_period, lgc_buy_price, lgc_sell_price, guaranteed_percent)
     results['Revenue from excess LGCs'] = lgc_balance['LGC Oversupply'].copy()
     results['Cost of shortfall LGCs'] = lgc_balance['LGC Undersupply'].copy()
 
-    # 6. Shortfall payments for energy - applied based on contract type.
+    # 7. Shortfall payments for energy - applied based on contract type.
     shortfall_payment_received = calculate_shortfall(volume_and_price, settlement_period, contract_type, shortfall_penalty,
                                                      guaranteed_percent)
     results['Shortfall Payments Received'] = -1 * shortfall_payment_received['Shortfall']
 
-    results['Total'] = results[['PPA Final Cost', 'Firming Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received']].sum(axis='columns')
+    results['Total'] = results[['PPA Final Cost', 'Firming Costs', 'Network Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received']].sum(axis='columns')
 
     return results
