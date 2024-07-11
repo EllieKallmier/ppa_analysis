@@ -44,5 +44,3 @@ def calc_unmatched_emissions(
     emissions_df = emissions_df.resample(resample_period).sum(numeric_only=True)
 
     return emissions_df['Emissions']
-
-# calc_unmatched_emissions(combined_data_firming, 'Contracted Energy', 'Y', LOAD_REGION)
