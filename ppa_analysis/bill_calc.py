@@ -314,7 +314,6 @@ def calculate_shortfall(
         volume['Shortfall'] *= shortfall_penalty  # IF the seller contracts other "Replacement Energy" - set shortfall penalty to zero.
         df_resamp = volume.resample(settlement_period).sum(numeric_only=True).copy()
 
-
     else:
         # 24/7 PPA shortfall is based on the match % (CFE score) - if actual match < contracted % on average in each
         # period, penalty applies to the missing %

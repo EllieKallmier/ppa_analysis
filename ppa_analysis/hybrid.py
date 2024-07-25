@@ -206,7 +206,7 @@ def run_hybrid_optimisation(
 # 
 def hybrid_shaped(
         contracted_amount:float, 
-        df:pd.DataFrame,
+        time_series_data:pd.DataFrame,
         generator_info:dict[str:float],
         redef_period:str,
         percentile_val:float
@@ -270,8 +270,8 @@ def hybrid_shaped(
     percentile_val = 1 - percentile_val
 
     # also need to find out if it's a leap year:
-    leap_year = check_leap_year(df)
-    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+    leap_year = check_leap_year(time_series_data)
+    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
 
     # Get the load and gen:
     first_year_load = first_year['Load'].copy()
@@ -304,7 +304,7 @@ def hybrid_shaped(
     )
 
     hybrid_trace_whole_length = pd.DataFrame(columns=['DateTime'])
-    hybrid_trace_whole_length['DateTime'] = df.index.copy()
+    hybrid_trace_whole_length['DateTime'] = time_series_data.index.copy()
 
     # Now add the hybrid P[x] profile to df as contracted energy
     resampled_gen_data['Contracted Energy'] = 0
@@ -315,21 +315,21 @@ def hybrid_shaped(
     
     contracted_gen_full_length = concat_shaped_profiles(redef_period, resampled_gen_data, hybrid_trace_whole_length)
 
-    df = pd.concat([df, contracted_gen_full_length['Contracted Energy']], axis='columns')
+    time_series_data = pd.concat([time_series_data, contracted_gen_full_length['Contracted Energy']], axis='columns')
 
     # Now add the 'actual' hybrid profile (each gen * allocated output %)
-    df['Hybrid'] = 0
+    time_series_data['Hybrid'] = 0
 
     for name, det_dict in percentages.items():
         hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        df['Hybrid'] += df[name] * hybrid_percent_gen
+        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
 
-    return df, percentages
+    return time_series_data, percentages
 
 
 def hybrid_baseload(
         contracted_amount:float, 
-        df:pd.DataFrame,
+        time_series_data:pd.DataFrame,
         generator_info:dict[str:float],
         redef_period:str,
         percentile_val:float
@@ -384,8 +384,8 @@ def hybrid_baseload(
         raise ValueError('contracted_amount must be greater than 0.')
     
     # also need to find out if it's a leap year:
-    leap_year = check_leap_year(df)
-    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+    leap_year = check_leap_year(time_series_data)
+    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
 
     # Resample to hourly load, then take the hourly average per chosen period
     first_year_load = first_year['Load'].copy()
@@ -395,7 +395,7 @@ def hybrid_baseload(
         avg_hourly_load = first_year_load.mean(numeric_only=True)
 
         # the contracted energy needs to be updated by the contracted_amount percentage:
-        df['Contracted Energy'] = round(avg_hourly_load) * (contracted_amount / 100)
+        time_series_data['Contracted Energy'] = round(avg_hourly_load) * (contracted_amount / 100)
     
     else:
         # the contracted energy needs to be updated by the contracted_amount percentage:
@@ -407,15 +407,15 @@ def hybrid_baseload(
 
         map_dict = dict(zip(avg_hourly_load[redef_period], avg_hourly_load['Load']))
 
-        df['M'] = df.index.month
-        df['Q'] = df.index.quarter
+        time_series_data['M'] = time_series_data.index.month
+        time_series_data['Q'] = time_series_data.index.quarter
 
-        df['Contracted Energy'] = df[redef_period].copy()
-        df['Contracted Energy'] = df['Contracted Energy'].map(map_dict)
+        time_series_data['Contracted Energy'] = time_series_data[redef_period].copy()
+        time_series_data['Contracted Energy'] = time_series_data['Contracted Energy'].map(map_dict)
 
-        df = df.drop(columns=['M', 'Q'])
+        time_series_data = time_series_data.drop(columns=['M', 'Q'])
 
-    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
     
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year['Contracted Energy'].copy(),
@@ -429,18 +429,18 @@ def hybrid_baseload(
 
     first_year = pd.concat([first_year, hybrid_trace_series], axis='columns')
 
-    df['Hybrid'] = 0
+    time_series_data['Hybrid'] = 0
 
     for name, det_dict in percentages.items():
         hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        df['Hybrid'] += df[name] * hybrid_percent_gen
+        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
 
-    return df, percentages
+    return time_series_data, percentages
 
 
 def hybrid_247(
         contracted_amount:float, 
-        df:pd.DataFrame,
+        time_series_data:pd.DataFrame,
         generator_info:dict[str:float],
         redef_period:str,
         percentile_val:float
@@ -492,8 +492,8 @@ def hybrid_247(
         raise ValueError('contracted_amount must be a float between 0-100')
 
     # also need to find out if it's a leap year:
-    leap_year = check_leap_year(df)
-    first_year = df.iloc[:24 * (365 + leap_year)].copy()
+    leap_year = check_leap_year(time_series_data)
+    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
 
     # Get first year load (and total sum):
     first_year_load = first_year['Load'].copy()
@@ -508,15 +508,15 @@ def hybrid_247(
         cfe_score_min=contracted_amount/100
     )
 
-    df['Hybrid'] = 0
+    time_series_data['Hybrid'] = 0
 
     for name, det_dict in percentages.items():
         hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        df['Hybrid'] += df[name] * hybrid_percent_gen
+        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
 
-    df['Contracted Energy'] = df['Hybrid'].copy()
+    time_series_data['Contracted Energy'] = time_series_data['Hybrid'].copy()
 
-    return df, percentages
+    return time_series_data, percentages
 
 
 def hybrid_pap(
@@ -598,7 +598,6 @@ def hybrid_pap(
     time_series_data['Contracted Energy'] = time_series_data['Hybrid'].copy()
     
     return time_series_data, percentages
-
 
 
 def hybrid_pac(
