@@ -309,7 +309,7 @@ def get_marginal_emissions_intensity(start, end, cache, regions, period=None):
 
 # Get both types of emissions and return as a combined df.
 def get_both_emissions(start, end, cache, regions, period=None):
-    average_emissions = get_avg_emissions_intensity(start, end, cache, regions, period)
+    average_emissions = get_avg_emissions_intensity_data(start, end, cache, regions, period)
     average_emissions = average_emissions.rename(columns={col : col+'_average' for col in average_emissions.columns if col != 'DateTime'})
 
     marginal_emissions = get_marginal_emissions_intensity(start, end, cache, regions, period)
@@ -320,7 +320,7 @@ def get_both_emissions(start, end, cache, regions, period=None):
     return emissions_df
 
 
-def get_preprocessed_average_emissions_intensity_data(file, region):
+def get_preprocessed_avg_intensity_emissions_data(file, region):
     """
     Read data returned by get_avg_emissions_intensity saved to disk in parquet format, and additionally filter by region.
 
