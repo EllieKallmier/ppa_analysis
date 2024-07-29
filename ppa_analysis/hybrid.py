@@ -72,7 +72,6 @@ def run_hybrid_optimisation(
 
     """
 
-    # TODO: consider if this return structure is actually best/fit for purpose here
     gen_names = {}
     gen_data_series = {}
     lcoe = {}
