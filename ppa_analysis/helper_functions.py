@@ -7,7 +7,7 @@ import holidays
 from datetime import timedelta
 from collections import Counter
 from ppa_analysis import advanced_settings
-from sunspot_bill_calculator import add_other_charges_to_tariff, convert_network_tariff_to_retail_tariff
+from ppa_analysis.tariffs import add_other_charges_to_tariff, convert_network_tariff_to_retail_tariff
 
 
 # Test help functions:
@@ -54,6 +54,31 @@ def check_leap_year(
     day_365 = day_one + timedelta(days=365)
 
     return day_one.day != day_365.day
+
+
+def convert_gen_editor_to_dict(
+        editor:dict
+) -> dict:
+    """
+    Convert generator_data_editor to simple nested dict.
+
+    Helper function to convert the nested dict with widget objects to a simple 
+    nested dict in order to pass generator info to further functions.
+    :param editor: a generator_data_editor object which is a nested dict with key
+        value pairs of generator name, generator info. Values are dictionaries 
+        containing widget objects.
+    
+    :return: new_dict, a simpler nested dict containing the same structure but instead
+        of widget objects, the values of each input widget are returned.
+    """
+    new_dict = {}
+    for key, value in editor.items():
+        if key != 'out':
+            new_dict[key] = {}
+            for key_2, value_2 in value.items():
+                if key_2 != 'label':
+                    new_dict[key][key_2] = value_2.value
+    return new_dict
 
 
 # Helper function to create the "shaped" profile based on the defined period and 
@@ -209,36 +234,91 @@ def get_data_years(cache_directory):
 # Calculate LCOE from user inputs/predetermined values
 # Function takes in the  generator LCOE info dictionary, and calculates LCOE
 # for only one generator with each call.
-# Returns LCOE value in $/MW
+# Returns LCOE value in $/MWh
 def calculate_lcoe(
-        generator_info: dict[str:object]
+    generator_info:dict[str:object]        
 ) -> float:
+    """
+    Calculate LCOE for chosen generator. 
+
+    This function takes inputs for one renewable energy generator and calculates
+    the levelised cost of energy (LCOE) for that generator in $/MWh. 
+
+    :param generator_info: dict containing key value pairs of generator information
+        as follows:
+        generator_info = {
+            'Capital ($/kW)' : float,
+            'Construction Time (years)' : float,
+            'Economic Life (years)' : float,
+            'Fixed O&M ($/kW)' : float,
+            'Variable O&M ($/kWh)' : float,
+            'Capacity Factor' : float
+        }
+    
+    :return: float, the calculated LCOE value for this generator in $/MWh.
+    """
+    
     # Baseline assumptions:
+    discount_rate = advanced_settings.DISCOUNT_RATE
 
+    capital = generator_info['Capital ($/kW)']*1000
+    construction_years = generator_info['Construction Time (years)']
+    economic_life = generator_info['Economic Life (years)']
+    fixed_om = generator_info['Fixed O&M ($/kW)']
+    variable_om = generator_info['Variable O&M ($/kWh)']
+    capacity_factor = generator_info['Capacity Factor']
 
-    capital_cost = generator_info['Capital ($/kW)']
-    numerator, denominator = 0, 0
-    for year in range(1, advanced_settings.LIFETIME_YEARS + 1):
-        kwh_in_year_n = generator_info['Capacity Factor'] * (365 * 24) # Note: this doesn't currently account for leap years!
-        numerator += (generator_info['Fixed O&M ($/kW)']
-                      + generator_info['Variable O&M ($/kWh)'] * kwh_in_year_n) / \
-                     ((1 + advanced_settings.DISCOUNT_RATE) ** year)
-        denominator += (kwh_in_year_n) / ((1 + advanced_settings.DISCOUNT_RATE) ** year)
-    numerator += capital_cost
+    first_capital_sum = (capital*(1+discount_rate)**construction_years * discount_rate * (1+discount_rate)**economic_life) / (((1+discount_rate)**economic_life)-1)/(8760*capacity_factor)
 
-    return (numerator / denominator) * 1000
+    op_and_main = variable_om * ((fixed_om*1000)/(8760*capacity_factor))
+
+    lcoe = first_capital_sum + op_and_main
+
+    return lcoe
 
 
 # ----- Fetch inputs and set up info_dict data to pass to later functions:
 def get_all_lcoes(
-        generator_data_editor: dict[str:dict[str:object]]
+        generator_data_dict:dict
 ) -> dict[str:float]:
+    
+    """ 
+    Calculate LCOE value for all selected renewable energy generators.
+
+    Acts as a wrapper function to call calculate_lcoe repeatedly for each of the
+    selected generators. This function is expected to be primarily called from interface.ipynb
+    or api_examples.ipynb, but is public and can be utilised anywhere. Returns from
+    this function are structured to be passed directly to create_hybrid_generation().
+
+    :param generator_data_dict: a nested dictionary containing a set of key value pairs
+        with generator information to be fed into the lcoe calculator.
+
+        dictionary structure should be as follows:
+        generator_data_dict = {
+        'Generator Name 1 ' : {
+            'Capital ($/kW)' : float,
+            'Construction Time (years)' : float,
+            'Economic Life (years)' : float,
+            'Fixed O&M ($/kW)' : float,
+            'Variable O&M ($/kWh)' : float,
+            'Capacity Factor' : float
+        }, 
+        'Generator Name 2' : {
+            ...
+        }, 
+        ...
+    }
+
+    :return: dict containing key:value pairs of generator name (str) and LCOE
+        value for the corresponding generator (float) in $/MWh.
+    """
+
     all_generator_lcoes = {}
-    for gen, gen_info in generator_data_editor.items():
+    for gen, gen_info in generator_data_dict.items():
         if gen != 'out':
             gen_lcoe = calculate_lcoe(gen_info)
             all_generator_lcoes[gen] = gen_lcoe
-
+    
     return all_generator_lcoes
 
 
