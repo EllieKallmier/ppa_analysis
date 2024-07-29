@@ -45,8 +45,13 @@ def plot_hybrid_results(
         for name in percentages_as_df['Labels'].values}
     )
 
-    total_mw_capacity = percentages_as_df['Contracted Capacity (MW)'].sum(numeric_only=True)
-
+    total_contract_capacity = percentages_as_df['Contracted Capacity (MW)'].sum(numeric_only=True)
+    if total_contract_capacity < 1:
+        total_contract_capacity = round(total_contract_capacity*1000, None)
+        units = 'kW'
+    else:
+        units = 'MW'
+        total_contract_capacity = round(total_contract_capacity, 2)
     
     list_of_cols = ['Load'] + percentages_as_df.index.to_list()
     contracted_generation = load_and_gen_data[list_of_cols].copy()
@@ -73,7 +78,7 @@ def plot_hybrid_results(
 
     axes[0].set_title('Total MWh Contracted')
     axes[0].set_ylabel('MWh')
-    axes[1].set_title(f'Hybrid Mix\nContracted Capacity: {round(total_mw_capacity,2)}MW')
+    axes[1].set_title(f'Hybrid Mix\nContracted Capacity: {total_contract_capacity}{units}')
 
     color_palette = sns.mpl_palette('Set2')
     reshaped_sums.plot.bar(stacked=True, ax=axes[0], legend=False, rot=0, color=color_palette)
@@ -98,7 +103,7 @@ def plot_emissions_bw(
     for col in emissions_measure.columns:
         if 'Load' in col:
             emissions_measure[f'Unmatched Energy - {col}'] = (emissions_measure['Load'] - np.minimum(emissions_measure['Hybrid'], emissions_measure['Contracted Energy'])).clip(lower=0.0)
-            emissions_measure[f'Emissions (tCO2-e) - {col}'] = emissions_measure['AEI: QLD1'] * emissions_measure[f'Unmatched Energy - {col}']
+            emissions_measure[f'Emissions (tCO2-e) - {col}'] = emissions_measure['AEI'] * emissions_measure[f'Unmatched Energy - {col}']
 
             cols_to_plot.append(col)
 
@@ -149,7 +154,7 @@ def plot_emissions_heatmap(
 ):
     emissions_measure = load_and_gen_data.copy()
     emissions_measure['Unmatched Energy'] = (emissions_measure[load_column_to_plot] - np.minimum(emissions_measure['Hybrid'], emissions_measure['Contracted Energy'])).clip(lower=0.0)
-    emissions_measure['Emissions (tCO2-e)'] = emissions_measure['AEI: QLD1'] * emissions_measure['Unmatched Energy']
+    emissions_measure['Emissions (tCO2-e)'] = emissions_measure['AEI'] * emissions_measure['Unmatched Energy']
 
     em_results = pd.DataFrame(emissions_measure['Emissions (tCO2-e)'])
     em_results['Hour'] = em_results.index.hour
@@ -382,9 +387,9 @@ def plot_bill_components(
     bill_results_to_plot = bill_results_to_plot.drop(columns=['Year'])
     bill_results_to_plot = bill_results_to_plot.reset_index(drop=True).set_index('Settlement Period')
 
-    total_values = bill_results_to_plot[['Total', 'Wholesale Total']].copy()
+    total_values = bill_results_to_plot[['Total', 'No PPA Total']].copy()
 
-    bill_results_to_plot = bill_results_to_plot.drop(columns=['Wholesale Total', 'Total'])
+    bill_results_to_plot = bill_results_to_plot.drop(columns=['No PPA Total', 'Total'])
 
     fig, ax = plt.subplots(figsize=(12,8))
 
@@ -400,6 +405,7 @@ def plot_bill_components(
     ax.set_ylabel('Costs and revenues ($)')
     ax.set_xlabel('Settlement period')
     ax.set_xticklabels(bill_results_to_plot.index.values, rotation=0)
+    ax.set_xlim(-0.5, len(bill_results_to_plot.index) - 0.5)
     ax.legend(bbox_to_anchor=(1.005,0.91), loc='upper left')
     ax2.legend(bbox_to_anchor=(1.005,1), loc='upper left')
 
