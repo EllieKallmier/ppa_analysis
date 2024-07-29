@@ -123,6 +123,4 @@ MAX_SOC = 0.8
 MIN_SOC = 0.2
 
 # LCOE settings
-
-LIFETIME_YEARS = 25
 DISCOUNT_RATE = 0.07  # AEMC uses 6-8.5% for all technologies
