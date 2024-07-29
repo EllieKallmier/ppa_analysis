@@ -1,9 +1,4 @@
-import numpy as np
 import pandas as pd
-import copy
-from datetime import datetime, time, timedelta
-from ppa_analysis import helper_functions, advanced_settings
-from sunspot_bill_calculator import bill_calculator, convert_network_tariff_to_retail_tariff, add_other_charges_to_tariff
 
 # Define options for different firming contracts: 
 
@@ -84,7 +79,7 @@ def tariff_firming_col_fill(
         data_at_tariff_selected_intervals = pd.concat([data_at_tariff_selected_intervals, data_between_times])
     
     index_for_selected_times = data_at_tariff_selected_intervals.index
-    load_and_gen_data.loc[index_for_selected_times, 'Firming'] += tariff_component_details['Value'] * 1000
+    load_and_gen_data.loc[index_for_selected_times, 'Firming price'] += tariff_component_details['Value'] * 1000
 
     return load_and_gen_data
 
@@ -92,15 +87,22 @@ def tariff_firming_col_fill(
 # Retail tariff contract:
 def retail_tariff_contract(
         df:pd.DataFrame,
-        regions:list[str], 
-        upper_bound:float,
-        lower_bound:float,
         tariff_details:dict
 ) -> pd.DataFrame:
+    df_with_firming = df.copy()
+    df_with_firming['Firming price'] = 0
 
-    
+    for component_name, info in tariff_details['Parameters']['NUOS'].items():
+        if 'FlatRate' in component_name:
+            df_with_firming['Firming price'] += info['Value'] * 1000
+        if 'TOU' in component_name:
+            for tou_component, tou_info in info.items():
+                df_with_firming = tariff_firming_col_fill(df_with_firming, tou_info)
 
-    return df
+    if len(df_with_firming[df_with_firming['Firming price']==0]) == len(df_with_firming):
+        df_with_firming['Firming price'] = df_with_firming[f'RRP'].copy()
+
+    return df_with_firming
 
 
 # Function to choose which firming contract to apply:
