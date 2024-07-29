@@ -271,10 +271,10 @@ def get_unit_capacity(unit):
     registered_capacity = static_table(
         table_name='Generators and Scheduled Loads',
         raw_data_location=advanced_settings.RAW_DATA_CACHE,
-        select_columns=['DUID', 'Reg Cap generation (MW)'],
+        select_columns=['DUID', 'Reg Cap (MW)'],
         filter_cols=['DUID'],
         filter_values=[(duid,)]
-    )['Reg Cap generation (MW)'].values[0]
+    )['Reg Cap (MW)'].values[0]
     return float(registered_capacity) * 1000
 
 
@@ -290,12 +290,6 @@ def add_editor_for_generator(generator_data_editor, generator, input_collector):
                     f'''
                     <h5>{generator}:</h5>
                     '''
-                )
-
-                capacity = get_unit_capacity(generator)
-                generator_data_editor[f'{generator}']['Nameplate Capacity (kW)'] = widgets.FloatText(
-                    value=capacity,
-                    description='Nameplate Capacity (kW)',
                 )
                     
                 generator_data_editor[f'{generator}']['Fixed O&M ($/kW)'] = widgets.FloatText(
@@ -326,6 +320,13 @@ def add_editor_for_generator(generator_data_editor, generator, input_collector):
                 generator_data_editor[f'{generator}']['Economic Life (years)'] = widgets.FloatText(
                     value=generator_data_set[generator_type]['Economic Life (years)'],
                     description='Economic Life (years)',
+                )
+
+                capacity = get_unit_capacity(generator)
+
+                generator_data_editor[f'{generator}']['Nameplate Capacity (kW)'] = widgets.FloatText(
+                    value=capacity,
+                    description='Nameplate Capacity (kW)',
                 )
 
 
@@ -613,19 +614,19 @@ def launch_extra_charges_collector():
     ))
 
     extra_charges_collector['lrec_charge'] = widgets.FloatText(
-        value=0.8000,
+        value=0.008,
         description='LREC Charge ($/kWh):'
     )
     display(extra_charges_collector['lrec_charge'])
 
     extra_charges_collector['srec_charge'] = widgets.FloatText(
-        value=0.4000,
+        value=0.004,
         description='SREC Charge ($/kWh):'
     )
     display(extra_charges_collector['srec_charge'])
 
     extra_charges_collector['state_env_charge'] = widgets.FloatText(
-        value=0.2000,
+        value=0.002,
         description='State Environment Charge ($/kWh):'
     )
     display(extra_charges_collector['state_env_charge'])
@@ -638,13 +639,13 @@ def launch_extra_charges_collector():
     ))
 
     extra_charges_collector['participant_charge'] = widgets.FloatText(
-        value=0.0360,
+        value=0.00036,
         description='AEMO Participant Charge ($/kWh):'
     )
     display(extra_charges_collector['participant_charge'])
 
     extra_charges_collector['ancillary_services_charge'] = widgets.FloatText(
-        value=0.0180,
+        value=0.00018,
         description='AEMO Ancillary Services Charge ($/kWh):'
     )
     display(extra_charges_collector['ancillary_services_charge'])
