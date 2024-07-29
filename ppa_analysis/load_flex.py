@@ -43,6 +43,7 @@ def _create_base_days(
 def daily_load_shifting(
         timeseries_data: pd.DataFrame,
         base_load_quantile: float = 0.75,
+        raise_price: float = 0.0,
         lower_price: float = 0.0,
         ramp_up_price: float = 0.01,
         ramp_down_price: float = 0.01
@@ -180,6 +181,7 @@ def daily_load_shifting(
                     xsum(
                         (unmatched[i] * wholesale_prices[i] + \
                          - lowered_load[i] * lower_price \
+                         + raised_load[i] * raise_price \
                          + ramp_up[i] * ramp_up_price - \
                          ramp_down[i] * ramp_down_price) for i in I
                     )
