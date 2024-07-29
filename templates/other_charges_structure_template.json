@@ -1,0 +1,84 @@
+{
+    "Other Commercial Charges" : {
+        "Energy Charges": {
+            "Peak Rate": {
+                "Unit": "$/kWh",
+                "Value": 0.06
+            },
+            "Shoulder Rate": {
+                "Unit": "$/kWh",
+                "Value": 0.06
+            },
+            "Off-Peak Rate": {
+                "Unit": "$/kWh",
+                "Value": 0.04
+            },
+            "Retailer Demand Charge": {
+                "Unit": "$/kVA/day",
+                "Value": 0.000
+            }
+        },
+        "Metering Charges": {
+            "Meter Provider/Data Agent Charges": {
+                "Unit": "$/Day",
+                "Value": 2.000
+            },
+            "Other Meter Charges": {
+                "Unit": "$/Day",
+                "Value": 0.000
+            }
+        },
+        "Environmental Charges": {
+            "LREC Charge": {
+                "Unit": "$/kWh",
+                "Value": 0.008
+            },
+            "SREC Charge": {
+                "Unit": "$/kWh",
+                "Value": 0.004
+            },
+            "State Environment Charge": {
+                "Unit": "$/kWh",
+                "Value": 0.002
+            }
+        },
+        "AEMO Market Charges": {
+            "AEMO Participant Charge": {
+                "Unit": "$/kWh",
+                "Value": 0.00036
+            },
+            "AEMO Ancillary Services Charge": {
+                "Unit": "$/kWh",
+                "Value": 0.00018
+            }
+        },
+        "Other Variable Charges": {
+            "Other Variable Charge 1": {
+                "Unit": "$/kWh",
+                "Value": ""
+            },
+            "Other Variable Charge 2": {
+                "Unit": "$/kWh",
+                "Value": ""
+            },
+            "Other Variable Charge 3": {
+                "Unit": "$/kWh",
+                "Value": ""
+            }
+        },
+        "Other Fixed Charges": {
+            "Total GST": {
+                "Unit": "$/Bill",
+                "Value": ""
+            },
+            "Other Fixed Charge 1": {
+                "Unit": "$/Bill",
+                "Value": ""
+            },
+            "Other Fixed Charge 2": {
+                "Unit": "$/Bill",
+                "Value": ""
+            }
+        }
+    }
+}

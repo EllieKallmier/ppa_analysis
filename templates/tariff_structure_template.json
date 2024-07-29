@@ -1,0 +1,201 @@
+[{
+    "CustomerType": "Commercial",
+    "Name": "Name of tariff being added",
+    "Parameters": {
+        "NUOS": {
+            "Daily": {
+                "Unit": "$/Day",
+                "Value": 0.0
+            },
+            "FlatRate": {
+                "Unit": "$/kWh",
+                "Value": 0.0
+            },
+            "BlockDaily": {
+                "Block 1": {
+                    "Unit": "$/kWh",
+                    "Value": 0.5,
+                    "HighBound": 1000
+                },
+                "Block 2": { 
+                    "Unit": "$/kWh",
+                    "Value": 0.4,
+                    "HighBound": "Infinity"
+                }
+            },
+            "TOU": {
+                "Peak Weekdays": {
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["07:00", "20:00"]
+                    },
+                    "Unit": "$/kWh",
+                    "Value": 0.3,
+                    "Weekday": true,
+                    "Weekend": false
+                },
+                "Shoulder Weekdays": {
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["05:00","07:00"],
+                        "T2": ["20:00","23:00"]
+                    },
+                    "Unit": "$/kWh",
+                    "Value": 0.2,
+                    "Weekday": true,
+                    "Weekend": false
+                },
+                "Off Peak Weekdays": {
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["23:00","05:00"]
+                    },
+                    "Unit": "$/kWh",
+                    "Value": 0.15,
+                    "Weekday": true,
+                    "Weekend": false
+                },
+                "Off Peak Weekends": {
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["00:00", "00:00"]
+                    },
+                    "Unit": "$/kWh",
+                    "Value": 0.15,
+                    "Weekday": false,
+                    "Weekend": true
+                }
+            },
+            "Demand": {
+                "Summer incentive demand" : {
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["16:00", "21:00"]
+                    },
+                    "Unit": "$/kW/day",
+                    "Value": 0.5,
+                    "Weekday": true,
+                    "Weekend": false
+                }
+            }, 
+            "Demand - last 12 Months" : {
+                "Rolling demand": {
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["07:00", "19:00"]
+                    },
+                    "Unit": "$/kW/day",
+                    "Value": 0.3,
+                    "Weekday": true,
+                    "Weekend": false
+                }
+            },
+            "Excess Demand": {
+                "Weekday Demand outside of peak (in excess of peak demand)":{
+                    "Month": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12
+                    ],
+                    "TimeIntervals": {
+                        "T1": ["19:00", "07:00"]
+                    },
+                    "Unit": "$/kW/day",
+                    "Value": 0.1,
+                    "Weekday": false,
+                    "Weekend": true 
+                }
+            }
+        }
+    },
+    "ProviderType": "Network",
+    "State": "ACT",
+    "Year": "2024"
+}]
