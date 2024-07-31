@@ -1,6 +1,7 @@
 import os
 import functools
 import logging
+import textwrap
 
 import ipywidgets as widgets
 from IPython.display import display, HTML
@@ -16,9 +17,9 @@ def launch_input_collector():
         '''
         <style>
         .widget-label { min-width: 30ex !important; }
-        .widget-select select { min-width: 70ex !important; }
-        .widget-dropdown select { min-width: 70ex !important; }
-        .widget-floattext input { min-width: 70ex !important; }
+        .widget-select select { min-width: 40ex !important; }
+        .widget-dropdown select { min-width: 40ex !important; }
+        .widget-floattext input { min-width: 40ex !important; }
         </style>
         '''
     ))
@@ -32,8 +33,6 @@ def launch_input_collector():
     out = widgets.Output()
 
     input_collector = {}
-
-    
 
     years_with_cached_data = helper_functions.get_data_years(advanced_settings.YEARLY_DATA_CACHE)
     input_collector['year'] = widgets.Dropdown(
@@ -90,8 +89,6 @@ def launch_input_collector():
     input_collector['year'].observe(update_generator_options)
     input_collector['generator_region'].observe(update_generator_options)
 
-    ## Can I run a charting function from here?? To show load and gen shapes?
-
     display(HTML(
         '''
         <h3>Contract parameters:</h3>
@@ -104,97 +101,114 @@ def launch_input_collector():
         '''
     ))
 
+    def on_toggle_click(which_widg, text, change):
+        with out:
+            if change['new']:
+                which_widg.value = "<br>".join(textwrap.wrap(text, 50))
+            else:
+                which_widg.value = ''
+
+    def button_setup(widget_input, help_text, label_text):
+        help_text_label = widgets.HTML(value='')
+        help_button = widgets.ToggleButton(
+            description='(?)',
+            disabled=False,
+            button_style='',
+            icon='',
+            layout=widgets.Layout(width='40px', height='28px')
+        )
+        help_button.style.button_color = 'grey'
+        help_button.observe(
+            functools.partial(
+                on_toggle_click, 
+                help_text_label, 
+                help_text
+            ), 
+            'value'
+        )
+
+        widget = widgets.VBox([widget_input])
+        widget_btn = widgets.VBox([help_button])
+        widget_lbl = widgets.VBox([widgets.Label(label_text, layout=widgets.Layout(display='flex', justify_content='flex-end'))])
+        widget_help = widgets.VBox([help_text_label])
+
+        hbox_collection = widgets.HBox([widget_lbl, widget, widget_btn, widget_help])
+
+        return display(hbox_collection)
+    
     input_collector['contract_type'] = widgets.Dropdown(
         options=advanced_settings.CONTRACT_TYPES,
         value=advanced_settings.CONTRACT_TYPES[0],
-        description='Contract type:',
-        disabled=False,
+        disabled=False
     )
-    display(input_collector['contract_type'])
+
+    button_setup(input_collector['contract_type'], 'This determines the type of PPA to be modelled for your selected load and generation profiles.', 'Contract type:')
+
 
     input_collector['firming_contract_type'] = widgets.Dropdown(
         options=advanced_settings.FIRMING_CONTRACT_TYPES,
         value=advanced_settings.FIRMING_CONTRACT_TYPES[0],
-        description='Firming contract type:',
         disabled=False,
     )
-    display(input_collector['firming_contract_type'])
+    button_setup(input_collector['firming_contract_type'], 'This determines how residual load that is not covered under the PPA is purchased.', 'Firming contract type:')
 
     input_collector['settlement_period'] = widgets.Dropdown(
         options=advanced_settings.SETTLEMENT_PERIODS,
         value=advanced_settings.SETTLEMENT_PERIODS[0],
-        description='Settlement period:',
         disabled=False,
     )
-    display(input_collector['settlement_period'])
+    button_setup(input_collector['settlement_period'], 'The settlement period refers to how frequently your bills are settled. For example, this can impact the outcomes for contracts with volume undersupply penalties as the volumes are calculated at the settlement period.', 'Settlement period:')
 
     input_collector['contract_amount'] = widgets.BoundedFloatText(
         value=100.0,
         min=0,
         max=1000.0,
-        description='Contract amount (%):'
     )
-    display(input_collector['contract_amount'])
+    button_setup(input_collector['contract_amount'], 'For 24/7 contracts: this value sets the minimum guaranteed average hourly match to reach under the contract, sometimes known as the CFE score. For all other contracts this value sets the percentage of the total load volume you wish to contract through the PPA. For example, you may wish to contract for 110% of the annual load volume.', 'Contract amount (%):')
 
     input_collector['strike_price'] = widgets.FloatText(
         value=100.0,
-        description='Strike price ($/MW/h):',
     )
-    display(input_collector['strike_price'])
+    button_setup(input_collector['strike_price'], 'This is the contract price, around which settlements occur. If no floor price is set, this is how much each MWh of contracted energy costs.', 'Strike price ($/MW/h):')
 
     input_collector['lgc_buy_price'] = widgets.FloatText(
         value=35.0,
-        description='LGC buy price ($/MW/h):',
     )
-    display(input_collector['lgc_buy_price'])
+    button_setup(input_collector['lgc_buy_price'], 'This is the price for any extra LGCs purchased outside of the contract to meet the desired total volume.', 'LGC buy price ($/MW/h):')
 
     input_collector['lgc_sell_price'] = widgets.FloatText(
         value=20.0,
-        description='LGC sell price ($/MW/h):',
     )
-    display(input_collector['lgc_sell_price'])
+    button_setup(input_collector['lgc_sell_price'], 'This is the price at which any LGCs in excess of the desired total volume are sold by the buyer.', 'LGC sell price ($/MW/h):')
 
     input_collector['shortfall_penalty'] = widgets.FloatText(
         value=25.0,
-        description='Short fall penalty ($/MW/h):',
     )
-    display(input_collector['shortfall_penalty'])
-
-    input_collector['guaranteed_percent'] = widgets.BoundedFloatText(
-        value=85.0,
-        min=0,
-        max=100,
-        description='Guaranteed percentage (%):',
-    )
-    display(input_collector['guaranteed_percent'])
+    button_setup(input_collector['shortfall_penalty'], 'This is the penalty paid by the seller to the buyer for any contracted energy that is not delivered by the hybrid portfolio.', 'Short fall penalty ($/MW/h):')
 
     input_collector['floor_price'] = widgets.FloatText(
         value=0.0,
-        description='Floor price ($/MW/h):',
     )
-    display(input_collector['floor_price'])
+    button_setup(input_collector['floor_price'], 'This value sets a floor price for the contract, meaning that the wholesale price for the purposes of contract settlement has a minimum value of $0/MWh.','Floor price ($/MW/h):')
 
     input_collector['excess_price'] = widgets.FloatText(
         value=65.0,
-        description='Excess price ($/MW/h):',
     )
-    display(input_collector['excess_price'])
+    button_setup(input_collector['excess_price'], 'This sets the price at which excess energy (contracted energy above the load in a given interval) is sold by the buyer to earn on-sell revenue.', 'Excess price ($/MW/h):')
 
     input_collector['indexation'] = widgets.BoundedFloatText(
         value=1.0,
         min=0,
         max=100,
-        description='Indexation (%):',
     )
-    display(input_collector['indexation'])
+    button_setup(input_collector['indexation'], 'Sets the percentage indexation applied to the contract strike price in each index period (defined below).', 'Indexation (%):')
 
     input_collector['index_period'] = widgets.Dropdown(
         options=advanced_settings.INDEX_PERIODS,
         value=advanced_settings.INDEX_PERIODS[0],
-        description='Index period:',
         disabled=False,
     )
-    display(input_collector['index_period'])
+    button_setup(input_collector['index_period'], 'This determines how often the strike price is indexed at the indexation rate.', 'Index period:')
 
     display(HTML(
         '''
@@ -205,10 +219,9 @@ def launch_input_collector():
     input_collector['redefine_period'] = widgets.Dropdown(
         options=advanced_settings.REDEFINE_PERIODS,
         value=advanced_settings.REDEFINE_PERIODS[2],
-        description='Redefine period:',
         disabled=False,
     )
-    display(input_collector['redefine_period'])
+    button_setup(input_collector['redefine_period'], 'For Shaped and Baseload contract types, the contract shape or baseload amount can be set monthly, quarterly or yearly.', 'Redefine period:')
 
     display(HTML(
         '''
@@ -220,27 +233,24 @@ def launch_input_collector():
         value=90.0,
         min=0,
         max=100,
-        description='Matching percentile:',
     )
-    display(input_collector['matching_percentile'])
+    button_setup(input_collector['matching_percentile'], 'This sets the percentile value to take of each generator profile to create the optimised hybrid profile for Shaped contracts.', 'Matching percentile:')
 
     display(HTML(
         '''
-        <h4> - Wholesale exposure only:</h4>
+        <h4> - Partial Wholesale exposure only:</h4>
         '''
     ))
 
     input_collector['exposure_upper_bound'] = widgets.FloatText(
         value=300.0,
-        description='Exposure upper bound ($/MW/h):',
     )
-    display(input_collector['exposure_upper_bound'])
+    button_setup(input_collector['exposure_upper_bound'], 'If the firming contract type chosen is Partial Wholesale Exposure, this value sets an upper bound on the wholesale price (assuming that the buyer purchases caps or another hedging product to achieve this).', 'Exposure upper bound ($/MW/h):')
 
     input_collector['exposure_lower_bound'] = widgets.FloatText(
         value=20.0,
-        description='Exposure lower bound ($/MW/h):',
     )
-    display(input_collector['exposure_lower_bound'])
+    button_setup(input_collector['exposure_lower_bound'], 'If the firming contract type chosen is Partial Wholesale Exposure, this value sets a lower bound on the wholesale price. This could reflect a partially exposed retail agreement.', 'Exposure lower bound ($/MW/h):')
 
     display(HTML(
         '''
@@ -258,10 +268,11 @@ def launch_input_collector():
 
     input_collector['generator_data_set'] = widgets.Dropdown(
         options=advanced_settings.GEN_COST_DATA.keys(),
-        description='Generator data set:',
         disabled=False,
     )
-    display(input_collector['generator_data_set'])
+    button_setup(input_collector['generator_data_set'], 'This defines the set of GenCost (or user supplied) data to use for the calculation of generator LCOEs.', 'Generator data set:')
+
+    display(out)
 
     return input_collector
 
