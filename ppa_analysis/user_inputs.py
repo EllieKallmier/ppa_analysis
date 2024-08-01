@@ -11,6 +11,42 @@ from ppa_analysis import helper_functions, advanced_settings, import_data
 
 logging.getLogger("nemosis").setLevel(logging.WARNING)
 
+def on_toggle_click(which_widg, text, change):
+    # with out:
+        if change['new']:
+            which_widg.value = "<br>".join(textwrap.wrap(text, 50))
+        else:
+            which_widg.value = ''
+
+def button_setup(widget_input, help_text, label_text):
+    help_text_label = widgets.HTML(value='')
+    help_button = widgets.ToggleButton(
+        description='(?)',
+        disabled=False,
+        button_style='',
+        icon='',
+        layout=widgets.Layout(width='40px', height='28px')
+    )
+    help_button.style.button_color = 'grey'
+    help_button.observe(
+        functools.partial(
+            on_toggle_click, 
+            help_text_label, 
+            help_text
+        ), 
+        'value'
+    )
+
+    widget = widgets.VBox([widget_input])
+    widget_btn = widgets.VBox([help_button])
+    widget_lbl = widgets.VBox([widgets.Label(label_text, layout=widgets.Layout(display='flex', justify_content='flex-end'))])
+    widget_help = widgets.VBox([help_text_label])
+
+    hbox_collection = widgets.HBox([widget_lbl, widget, widget_btn, widget_help])
+
+    return display(hbox_collection)
+
+
 def launch_input_collector():
 
     display(HTML(
@@ -100,41 +136,6 @@ def launch_input_collector():
         <h4> - All contracts:</h4>
         '''
     ))
-
-    def on_toggle_click(which_widg, text, change):
-        with out:
-            if change['new']:
-                which_widg.value = "<br>".join(textwrap.wrap(text, 50))
-            else:
-                which_widg.value = ''
-
-    def button_setup(widget_input, help_text, label_text):
-        help_text_label = widgets.HTML(value='')
-        help_button = widgets.ToggleButton(
-            description='(?)',
-            disabled=False,
-            button_style='',
-            icon='',
-            layout=widgets.Layout(width='40px', height='28px')
-        )
-        help_button.style.button_color = 'grey'
-        help_button.observe(
-            functools.partial(
-                on_toggle_click, 
-                help_text_label, 
-                help_text
-            ), 
-            'value'
-        )
-
-        widget = widgets.VBox([widget_input])
-        widget_btn = widgets.VBox([help_button])
-        widget_lbl = widgets.VBox([widgets.Label(label_text, layout=widgets.Layout(display='flex', justify_content='flex-end'))])
-        widget_help = widgets.VBox([help_text_label])
-
-        hbox_collection = widgets.HBox([widget_lbl, widget, widget_btn, widget_help])
-
-        return display(hbox_collection)
     
     input_collector['contract_type'] = widgets.Dropdown(
         options=advanced_settings.CONTRACT_TYPES,
@@ -422,15 +423,13 @@ def launch_battery_input_collector():
 
     battery_input_collector['rated_power_capacity'] = widgets.FloatText(
         value=1.0,
-        description='Rated power capacity (MW):',
     )
-    display(battery_input_collector['rated_power_capacity'])
+    button_setup(battery_input_collector['rated_power_capacity'], 'Set this to the desired battery power capacity to be modelled. This value is also used to set the maximum charge and discharge rate for the modelled battery.','Rated power capacity (MW):')
 
     battery_input_collector['size_in_mwh'] = widgets.FloatText(
         value=2.0,
-        description='Battery size (MWh):',
     )
-    display(battery_input_collector['size_in_mwh'])
+    button_setup(battery_input_collector['size_in_mwh'], 'This should be equal to the storage duration in hours multiplied by the rated power capacity of the battery you wish to model, and sets the storage capacity of the battery.','Battery size (MWh):')
 
     return battery_input_collector
 
@@ -460,36 +459,30 @@ def launch_flex_input_collector():
         value=0.8,
         min=0,
         max=1.0,
-        description='Base load quantile:',
-        tooltip='Run help(load_flex.daily_load_shifting) for details.'
     )
-    display(flex_input_collector['base_load_quantile'])
+    button_setup(flex_input_collector['base_load_quantile'], 'This determines how much of the load will be allowed to shift in each day by setting a daily inflexible load profile based on the quantile input here. For example, a value of 0.5 here sets the median daily load profile as inflexible, with any load exceeding the median value in each interval allowed to shift within the day. Lower values = more flexible load. Run help(load_flex.daily_load_shifting) for details.','Base load quantile:')
 
     flex_input_collector['raise_price'] = widgets.FloatText(
         value=0.0,
-        description='Raise price ($/MWh):',
     )
-    display(flex_input_collector['raise_price'])
+    button_setup(flex_input_collector['raise_price'], 'This is a penalty value applied to any load increased above its original value in a given interval when optimising load flex. High input values will heavily restrict flexibility.','Raise price ($/MWh):')
 
 
     flex_input_collector['lower_price'] = widgets.FloatText(
         value=0.0,
-        description='Lower price ($/MWh):',
     )
-    display(flex_input_collector['lower_price'])
+    button_setup(flex_input_collector['lower_price'], 'This is a penalty value applied to any load decreased below its original value in a given interval when optimising load flex. High input values will heavily restrict flexibility.','Lower price ($/MWh):')
 
 
     flex_input_collector['ramp_up'] = widgets.FloatText(
         value=0.01,
-        description='Ramp up penalty ($/MWh):',
     )
-    display(flex_input_collector['ramp_up'])
+    button_setup(flex_input_collector['ramp_up'], 'The penalty applied to the positive difference between load energy at time <i>t</i> and time <i>t-1</i>.','Ramp up penalty ($/MWh):')
 
     flex_input_collector['ramp_down'] = widgets.FloatText(
         value=0.01,
-        description='Ramp down penalty ($/MWh):',
     )
-    display(flex_input_collector['ramp_down'])
+    button_setup(flex_input_collector['ramp_down'], 'The penalty applied to the negative difference between load energy at time <i>t</i> and time <i>t-1</i>.','Ramp down penalty ($/MWh):')
 
     return flex_input_collector
 
