@@ -2,12 +2,20 @@ import os
 import functools
 import logging
 import textwrap
+import copy
+import pandas as pd
 
 import ipywidgets as widgets
 from IPython.display import display, HTML
 from nemosis import static_table
 
-from ppa_analysis import helper_functions, advanced_settings, import_data
+from ppa_analysis import (
+    helper_functions, 
+    advanced_settings, 
+    import_data, 
+    tariffs,
+    firming_contracts
+)
 
 logging.getLogger("nemosis").setLevel(logging.WARNING)
 
@@ -96,7 +104,7 @@ def launch_input_collector():
     display(input_collector['load_region'])
 
     input_collector['load_data_file'] = widgets.Dropdown(
-        options=os.listdir(advanced_settings.LOAD_DATA_DIR),
+        options=[os.path.splitext(fn)[0] for fn in os.listdir(advanced_settings.LOAD_DATA_DIR)],
         description='Load data file:',
         disabled=False,
     )
@@ -278,15 +286,27 @@ def launch_input_collector():
     return input_collector
 
 
-def get_unit_capacity(unit):
+def get_unit_capacity(unit:str) -> float:
+    """Returns the registered capacity of a generation unit in watts.
+
+    Args:
+        unit (str): The identifier of the unit, formatted as '<DUID>:<full_name>'.
+
+    Returns:
+        float: The registered capacity of the unit in watts (MW * 1000).
+    
+    The function extracts the DUID from the input string, queries the static table 
+    for the registered generation capacity in megawatts, and converts it to watts 
+    by multiplying by 1000.
+    """
     duid = unit.split(':')[0]
     registered_capacity = static_table(
         table_name='Generators and Scheduled Loads',
         raw_data_location=advanced_settings.RAW_DATA_CACHE,
-        select_columns=['DUID', 'Reg Cap (MW)'],
+        select_columns=['DUID', 'Reg Cap generation (MW)'],
         filter_cols=['DUID'],
         filter_values=[(duid,)]
-    )['Reg Cap (MW)'].values[0]
+    )['Reg Cap generation (MW)'].values[0]
     return float(registered_capacity) * 1000
 
 
@@ -510,7 +530,6 @@ def tariff_options_collector(input_collector):
     tariff_collector = {}
 
     def get_tariff_options(input_collector):
-        region = input_collector['load_region'].value
         all_tariffs = helper_functions.read_json_file(advanced_settings.COMMERCIAL_TARIFFS_FN)
         all_tariffs = all_tariffs[0]['Tariffs']
 
@@ -705,3 +724,98 @@ def launch_extra_charges_collector():
     display(extra_charges_collector['other_fixed_charge_two'])
 
     return extra_charges_collector
+
+def collect_and_combine_data(
+    input_collector: dict, 
+    tariff_collector: dict, 
+    extra_charges_collector: dict
+) -> pd.DataFrame:
+    # This function is currently only usable in the interface.ipynb notebook
+    # as it relies on the various collector nested dictionary and widget
+    # structures. 
+
+    # ----------------------------- Unpack user input ------------------------------
+    year_to_load_from_cache = input_collector["year"].value
+    year_to_load = int(year_to_load_from_cache)
+    GENERATOR_REGION = input_collector["generator_region"].value
+    LOAD_REGION = input_collector["load_region"].value
+    generators = list(input_collector["generators"].value)
+
+    # ------------------- Get Load Data --------------------
+    # if using preset data, use these hard coded values:
+    LOAD_DATA_DIR = "data_caches/c_and_i_customer_loads"
+    load_filename = input_collector["load_data_file"].value + ".csv"
+    filepath = LOAD_DATA_DIR + "/" + load_filename
+    LOAD_DATETIME_COL_NAME = "TS"
+    LOAD_COL_NAME = "Load"
+    DAY_FIRST = True
+
+    # Units are definitely a question.
+    load_data, start_date, end_date = import_data.get_load_data(
+        filepath, LOAD_DATETIME_COL_NAME, LOAD_COL_NAME, DAY_FIRST
+    )
+    load_data = load_data[
+        (load_data.index >= f"{year_to_load}-01-01 00:00:00")
+        & (load_data.index < f"{year_to_load+1}-01-01 00:00:00")
+    ]
+
+    # ----------------------------- Get Generation Data ----------------------------
+    gen_data_file = (
+        advanced_settings.YEARLY_DATA_CACHE
+        / f"gen_data_{year_to_load_from_cache}.parquet"
+    )
+    gen_data = import_data.get_preprocessed_gen_data(gen_data_file, [GENERATOR_REGION])
+    gen_data = gen_data[generators]
+
+    # --------------------------- Get Emissions Data -------------------------------
+    emissions_data_file = (
+        advanced_settings.YEARLY_DATA_CACHE
+        / f"emissions_data_{year_to_load_from_cache}.parquet"
+    )
+    emissions_intensity = import_data.get_preprocessed_avg_intensity_emissions_data(
+        emissions_data_file, LOAD_REGION
+    )
+
+    # ------------------------ Get Wholesale Price Data ----------------------------
+    price_data_file = (
+        advanced_settings.YEARLY_DATA_CACHE
+        / f"price_data_{year_to_load_from_cache}.parquet"
+    )
+    price_data = import_data.get_preprocessed_price_data(price_data_file, LOAD_REGION)
+
+    combined_data = pd.concat(
+        [load_data, gen_data, price_data, emissions_intensity], axis="columns"
+    )
+
+    FIRMING_CONTRACT_TYPE = input_collector["firming_contract_type"].value
+    EXPOSURE_BOUND_UPPER = input_collector["exposure_upper_bound"].value
+    EXPOSURE_BOUND_LOWER = input_collector["exposure_lower_bound"].value
+    RETAIL_TARIFF_DETAILS = {}
+
+    if input_collector["firming_contract_type"].value == "Retail":
+        selected_tariff_name = tariff_collector["tariff_name"].value
+        all_tariffs = helper_functions.read_json_file(
+            advanced_settings.COMMERCIAL_TARIFFS_FN
+        )
+        all_tariffs = all_tariffs[0]["Tariffs"]
+        for tariff in all_tariffs:
+            if tariff["Name"] == selected_tariff_name:
+                selected_tariff = copy.deepcopy(tariff)
+
+        extra_charges = helper_functions.format_other_charges(extra_charges_collector)
+        RETAIL_TARIFF_DETAILS = tariffs.add_other_charges_to_tariff(
+            selected_tariff, extra_charges
+        )
+
+    # Add the firming details:
+    combined_data = firming_contracts.choose_firming_type(
+        FIRMING_CONTRACT_TYPE,
+        combined_data,
+        EXPOSURE_BOUND_UPPER,
+        EXPOSURE_BOUND_LOWER,
+        RETAIL_TARIFF_DETAILS,
+    )
+
+    combined_data = combined_data.dropna(how="any", axis="rows")
+
+    return combined_data

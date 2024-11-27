@@ -13,10 +13,10 @@ type. Note these contract specific functions can also be used directly if desire
 performs the optimisation, and may be useful to the advanced user who want to implement a customised methodology.
 """
 
-
+import pandas as pd
 import numpy as np
 from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS, CBC, GUROBI
-from ppa_analysis.helper_functions import *
+from ppa_analysis.helper_functions import *  # noqa: F403
 from ppa_analysis import advanced_settings
 
 

@@ -18,126 +18,1197 @@ import numpy as np
 import pandas as pd
 import warnings
 
+from dateutil.relativedelta import relativedelta
+
 warnings.filterwarnings("ignore")
+def time_select(
+        load_profile_s: pd.DataFrame, 
+        tariff_component_details:dict
+) -> pd.DataFrame:
+    """Filters a load profile DataFrame based on specified time intervals and days 
+    of the week/month from tariff component details.
 
-# This file contains four functions:
-#  1- bill_calculator calculates the bill for any load profile and tariff.
-#     It now calls two different versions based on the input tariff: one for residential/small business tariffs, and one for large commercial ones.
-#     The bill calculator for large commercial tariffs is slightly different from residential bill calculator; hence we separated them for now.
+    Args:
+        load_profile_s: A DataFrame containing the load profile data with
+             a DateTime index.
+        tariff_component_details: A dictionary containing the time intervals, weekdays, 
+            weekends, and months for filtering. The dictionary must have the following key/value
+            pairs
+            - TimeIntervals: A dictionary where each key is an interval ID 
+                and each value is a list of two time strings (start and end).
+                Time strings in 'TimeIntervals' should be in 'HH:MM' format.
+                Time intervals starting at '24:00' are adjusted to '00:00' 
+                for proper filtering.
+            - Weekday: A boolean indicating whether weekdays are included in this 
+                tariff component.
+            - Weekend: A boolean indicating whether weekends are included in this 
+                tariff component.
+            - Month: A list of integers representing the months included in this 
+                component (e.g., [1, 2, 3] for January, February, March).
+            Dict structure looks like: 
+            tariff_component_details = {
+                "Month": [
+                    1,
+                    2,
+                    12
+                ],
+                "TimeIntervals": {
+                    "T1": [
+                        "22:00",
+                        "07:00"
+                    ]
+                },
+                "Weekday": true,
+                "Weekend": false
+            }
 
-#  4- Main function to call these.
+    Returns:
+        load_profile_selected_times: A DataFrame filtered to 
+            include only the rows that fall within the specified time intervals, 
+            and match the specified weekday/weekend and month criteria for the
+            given tariff component.
+
+    """
+    load_profile_selected_times = pd.DataFrame()
+    for interval_id, times, in tariff_component_details['TimeIntervals'].items():
+        if times[0][0:2] == '24':
+            times[0] = times[1].replace("24", "00")
+        if times[1][0:2] == '24':
+            times[1] = times[1].replace("24", "00")
+        if times[0] != times[1]:
+            lp_between_times = load_profile_s.between_time(start_time=times[0], end_time=times[1], inclusive='right')
+        else:
+            lp_between_times = load_profile_s.copy()
+
+        if not tariff_component_details['Weekday']:
+            lp_times_and_days = lp_between_times.loc[lp_between_times.index.weekday >= 5].copy()
+        elif not tariff_component_details['Weekend']:
+            lp_times_and_days = lp_between_times.loc[lp_between_times.index.weekday < 5].copy()
+        else:
+            lp_times_and_days = lp_between_times.copy()
+        lp_times_days_months = lp_times_and_days.loc[lp_times_and_days.index.month.isin(tariff_component_details['Month']), :].copy()
+
+        load_profile_selected_times = pd.concat([load_profile_selected_times, lp_times_days_months])
+    return load_profile_selected_times
 
 
-# -------------------- Bill Calculator functions for large commercial tariffs --------------------
+def calculate_daily_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the total daily charges for a bill.
+
+    Args:
+        load_profile: A DataFrame containing the load profile data in kWh
+            with a DateTime index.
+        tariff_component: A dictionary containing tariff details. It should
+            include a 'Daily' key with a nested dictionary that has a 'Value' key
+            specifying the daily charge rate as follows:
+            tariff_component = {
+                ...
+                'Daily' : {
+                    'Unit' : '$/Day',
+                    'Value' : 10.0
+                }
+                ...
+            }
+        results: dict, not used here, included to simplify control logic.
+        tariff_category: A string representing the tariff category, one of 'NUOS'
+            or 'Retailer' (not used here, included to simplify control logic).
+
+    Returns:
+        float: The bill's total daily charge in dollars ($), calculated as 
+            num_days_in_load_profile * daily_charge_value.
+
+    """
+    num_days = (len(load_profile.index.normalize().unique()) - 1)
+    daily_charge = num_days * tariff_component['Daily']['Value']
+    return daily_charge
+
+def calculate_fixed_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Returns the total fixed charges for a bill.
+
+    Args:
+        load_profile: A DataFrame containing the load profile data
+            with a DateTime index (not used here, included to simplify control 
+            logic).
+        tariff_component: A dictionary containing tariff details. It should
+            include a 'Fixed' key with a nested dictionary that has a 'Value' key
+            specifying the fixed rate per bill as follows:
+            tariff_component = {
+                ...
+                'Fixed' : {
+                    'Unit' : '$/Bill',
+                    'Value' : 100.0
+                }
+                ...
+            }
+            - 'Unit' must be '$/Bill'
+        results: dict, not used here, included to simplify control logic.
+        tariff_category: A string representing the tariff category, one of 'NUOS'
+            or 'Retailer' (not used here, included to simplify control logic).
+
+    Returns:
+        float: The bill's total fixed charge in dollars ($).
+            
+    """
+    return tariff_component['Fixed']['Value']
+
+def calculate_flatrate_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the total of all flat rate charges for a bill.
+
+    Args:
+        load_profile: DataFrame not used here, included to simplify control logic.
+        tariff_component: A dictionary containing tariff details. It should
+            include a 'FlatRate' key with a nested dictionary that has a 'Value' key
+            specifying the daily charge rate as follows:
+            tariff_component = {
+                ...
+                'FlatRate' : {
+                    'Unit' : '$/kWh',
+                    'Value' : 0.55
+                }
+                ...
+            }
+        results: A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key tariff_category with a pd.DataFrame that stores tariff component
+            results.
+            Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                tariff_category : pd.DataFrame()
+            }
+        tariff_category: str, not used here, included to simplify control logic.
+
+    Returns:
+        float: The bill's total daily charge in dollars ($), calculated as 
+            num_days_in_load_profile * daily_charge_value.
+
+    """
+    flat_rate_charge = results['LoadInfo']['Annual_kWh'] * tariff_component['FlatRate']['Value']
+    return flat_rate_charge
+
+
+def calculate_annual_block_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the total of all annual block charges for a bill.
+
+    For each block described in the tariff component, energy usage is compared
+    against the bounds of the block. Usage up to the upper bound of the block
+    is charged at the block's set rate, and the remaining energy use is charged 
+    under the next block's rate (and so on). For example, with an annual usage
+    of 1000kWh and an upper bound of 800kWh for the first block at $0.5/kWh
+    and no upper bound for the second block at $0.8/kWh, the annual charge
+    is calculated as 800 * 0.5 + 200 * 0.8 = $560.
+
+    Args:
+        load_profile: DataFrame not used here, included to simplify control 
+            logic.
+        tariff_component: A dictionary containing tariff details. It should
+            include a 'BlockAnnual' key with a nested dictionary with the following
+            structure:
+            tariff_component = {
+            ...
+                'BlockAnnual' : {
+                    'Block1' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.20,
+                        'HighBound' : 60
+                    },
+                    'Block2' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.55,
+                        'HighBound' : Infinity
+                    },
+                    ...
+                }
+                ...
+            }
+        results: A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key tariff_category with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                tariff_category : pd.DataFrame()
+            }
+        tariff_category: str, not used here, included to simplify control logic.
+
+    Returns:
+        float: The bill's total daily charge in dollars ($), calculated as 
+            num_days_in_load_profile * daily_charge_value.
+
+    """
+    block_use = results['LoadInfo'][['Annual_kWh']].copy()
+    block_use_charge = block_use.copy()
+    lim = 0
+    for k, v in tariff_component['BlockAnnual'].items():
+        block_use[k] = block_use['Annual_kWh']
+        block_use[k][block_use[k] > float(v['HighBound'])] = float(v['HighBound'])
+        block_use[k] = block_use[k] - lim
+        block_use[k][block_use[k] < 0] = 0
+        lim = float(v['HighBound'])
+        block_use_charge[k] = block_use[k] * v['Value']
+    del block_use['Annual_kWh']
+    del block_use_charge['Annual_kWh']
+    annual_block_charge = block_use_charge.sum(axis=1)
+
+    return annual_block_charge
+
+
+def calculate_quarterly_block_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the quarterly block charge based on the load profile and
+    tariff component details.
+
+    This function calculates quarterly consumption for each of the four quarters, 
+    applies the block tariff charges based on consumption within each block, and 
+    sums up the charges for each quarter. This total charge is returned as a float.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a 'BlockQuarterly' key with a nested dictionary where each
+            key represents a block and each value is a dictionary with 'HighBound'
+            and 'Value' specifying the upper bound and charge rate for that block:
+            tariff_component = {
+            ...
+                'BlockQuarterly' : {
+                    'Block1' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.20,
+                        'HighBound' : 60
+                    },
+                    'Block2' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.55,
+                        'HighBound' : Infinity
+                    },
+                    ...
+                }
+                ...
+            }
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The total quarterly block charge calculated from the load profile
+            and tariff component details.
+
+    Notes:
+        - Quarterly periods are defined as:
+            Q1: January - March
+            Q2: April - June
+            Q3: July - September
+            Q4: October - December
+    """
+    # first: get quarterly consumption and save in the results 'LoadInfo' df:
+    for Q in range(1, 5):
+        lp_quarterly = load_profile.loc[
+                            load_profile.index.month.isin(list(range((Q - 1) * 3 + 1, Q * 3 + 1))), :]
+        results['LoadInfo']['kWh_Q' + str(Q)] = [
+            np.nansum(lp_quarterly[col].values[lp_quarterly[col].values > 0])
+            for col in lp_quarterly.columns]
+        
+    # then get the charge for each quarter:
+    for Q in range(1, 5):
+        block_use = results['LoadInfo'][['kWh_Q' + str(Q)]].copy()
+        block_use_charge = block_use.copy()
+        lim = 0
+        for k, v in tariff_component['BlockQuarterly'].items():
+            block_use[k] = block_use['kWh_Q' + str(Q)]
+            block_use[k][block_use[k] > float(v['HighBound'])] = float(v['HighBound'])
+            block_use[k] = block_use[k] - lim
+            block_use[k][block_use[k] < 0] = 0
+            lim = float(v['HighBound'])
+            block_use_charge[k] = block_use[k] * v['Value']
+        del block_use['kWh_Q' + str(Q)]
+        del block_use_charge['kWh_Q' + str(Q)]
+
+        results[tariff_category]['C_BlockQuarterly_' + str(Q)] = block_use_charge.sum(axis=1)
+    
+    quarterly_block_charge = results[tariff_category][['C_BlockQuarterly_' + str(Q) for Q in range(1, 5)]].sum(axis=1)
+    return quarterly_block_charge
+
+
+def calculate_monthly_block_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the monthly block charge based on the load profile and
+    tariff component details.
+
+    This function calculates consumption within each month, applies the block tariff 
+    charges based on consumption within each block, and sums up the charges for each 
+    month. This total charge is returned as a float.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a 'BlockMonthly' key with a nested dictionary where each
+            key represents a block and each value is a dictionary with 'HighBound'
+            and 'Value' specifying the upper bound and charge rate for that block:
+            tariff_component = {
+            ...
+                'BlockMonthly' : {
+                    'Block1' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.20,
+                        'HighBound' : 60
+                    },
+                    'Block2' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.55,
+                        'HighBound' : Infinity
+                    },
+                    ...
+                }
+                ...
+            }
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The total monthly block charge calculated from the load profile
+            and tariff component details.
+
+    """
+    # Get monthly consumtion and store in results 'LoadInfo' df:
+    for m in range(1, 13):
+        lp_monthly = load_profile.loc[load_profile.index.month == m, :]
+        results['LoadInfo']['kWh_m' + str(m)] = [
+            np.nansum(lp_monthly[col].values[lp_monthly[col].values > 0])
+            for col in lp_monthly.columns
+        ]
+    
+    # then calculate the charge for each month:
+    for m in range(1, 13):
+        block_use = results['LoadInfo'][['kWh_m' + str(m)]].copy()
+        block_use_charge = block_use.copy()
+        lim = 0
+        for k, v in tariff_component['BlockMonthly'].items():
+            block_use[k] = block_use['kWh_m' + str(m)]
+            block_use[k][block_use[k] > float(v['HighBound'])] = float(v['HighBound'])
+            block_use[k] = block_use[k] - lim
+            block_use[k][block_use[k] < 0] = 0
+            lim = float(v['HighBound'])
+            block_use_charge[k] = block_use[k] * v['Value']
+        del block_use['kWh_m' + str(m)]
+        del block_use_charge['kWh_m' + str(m)]
+        results[tariff_category]['C_BlockMonthly_' + str(m)] = block_use_charge.sum(axis=1)
+    
+    monthly_block_charge = results[tariff_category][['C_BlockMonthly_' + str(m) for m in range(1, 13)]].sum(axis=1)
+    return monthly_block_charge
+    
+
+def calculate_daily_block_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the daily block charge based on the load profile and
+    tariff component details.
+
+    This function calculates consumption within each month, applies the block tariff 
+    charges based on consumption within each block, and sums up the charges for each 
+    month. This total charge is returned as a float.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a 'BlockDaily' key with a nested dictionary where each
+            key represents a block and each value is a dictionary with 'HighBound'
+            and 'Value' specifying the upper bound and charge rate for that block:
+            tariff_component = {
+            ...
+                'BlockDaily' : {
+                    'Block1' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.20,
+                        'HighBound' : 60
+                    },
+                    'Block2' : {
+                        'Unit' : '$/kWh',
+                        'Value' : 0.55,
+                        'HighBound' : Infinity
+                    },
+                    ...
+                }
+                ...
+            }
+        results (dict): dict, not used here, included to simplify control logic.
+        tariff_category (str): str, not used here, included to simplify control logic.
+
+    Returns:
+        float: The total daily block charge calculated from the load profile
+            and tariff component details.
+
+    """
+    
+    # First, resample the load profile to get daily usage:
+    daily_kwh_usage = load_profile.resample('D').sum()
+    block_use_temp_charge = daily_kwh_usage.copy()
+    block_use_temp_charge.iloc[:, :] = 0
+    lim = 0
+    # then apply the daily blocks to find daily charges:
+    for block, details in tariff_component['BlockDaily'].items():
+        block_use_temp = daily_kwh_usage.copy()
+        block_use_temp[block_use_temp > float(details['HighBound'])] = float(details['HighBound'])
+        block_use_temp = block_use_temp - lim
+        block_use_temp[block_use_temp < 0] = 0
+        lim = float(details['HighBound'])
+        block_use_temp_charge = block_use_temp_charge + block_use_temp * details['Value']
+    daily_block_charge = block_use_temp_charge.sum(axis=0)
+    return daily_block_charge
+
+
+def calculate_time_of_use_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the total time of use energy charge based on the load profile and
+    tariff component details.
+
+    This function calculates consumption within each defined time of use period, 
+    applies the tariff rate based on consumption within each period, and sums up 
+    all time of use charges.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a 'TOU' key with a nested dictionary where each key represents 
+            a charging period and each value is a dictionary with details specifying
+            month, time and weekdays during which the charge applies, as well as 
+            the units ($/kWh) and rate of the charge itself.
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The total TOU charge calculated from the load profile and tariff 
+            component details.
+
+    """
+    # First set up temporary dfs to hold interim results:
+    time_of_use_consumption = pd.DataFrame()
+    time_of_use_consumption_charge = pd.DataFrame()
+    # Loop over each TOU component (e.g. Peak, Weekend Off-Peak, Shoulder etc)
+    # and fill in any missing details with default values
+    for tou_component, details in tariff_component['TOU'].items():
+        details_copy = details.copy()
+        if 'Weekday' not in details_copy:
+            details_copy['Weekday'] = True
+            details_copy['Weekend'] = True
+        if 'TimeIntervals' not in details_copy:
+            details_copy['TimeIntervals'] = {'T1': ['00:00', '00:00']}
+        if 'Month' not in details_copy:
+            details_copy['Month'] = list(range(1, 13))
+
+        # Then call time_select to get the load_profile for times during which
+        # this charge component applies. Calculate usage then total charge for 
+        # this period:
+        lp_time_of_use = time_select(load_profile, details_copy)
+        time_of_use_consumption[tou_component] = lp_time_of_use.sum()
+        results[tariff_category]['kWh_' + tou_component] = time_of_use_consumption[tou_component].copy()
+        time_of_use_consumption_charge[tou_component] = details_copy['Value'] * time_of_use_consumption[tou_component]
+        results[tariff_category]['TOU_' + tou_component] = time_of_use_consumption_charge[tou_component].copy()
+
+    time_of_use_charge = time_of_use_consumption_charge.sum(axis=1)
+    return time_of_use_charge
+
+
+def calc_dem_(
+        dem_component_details:dict,
+        num_peaks:int,
+        load_profile_selected_times:pd.DataFrame,
+        tariff_category:str,
+        demand_component:str,
+        results:dict
+) -> float:
+    """Calculate the demand charge based on demand component details and load profile data.
+
+    This function computes the demand charge based on the provided demand component details, 
+    the number of peaks to consider, and the load profile. It updates a results DataFrame 
+    with the average demand and the total demand charge for the given tariff category and 
+    demand component.
+
+    Args:
+        dem_component_details: A dictionary containing details about the demand component,
+            such as minimum demand and charge values. Expected keys are 'Value', 'Unit' ($/kW/day),
+            'Min Demand (kW)' and 'Min Demand Charge ($)'.
+        num_peaks: The number of peaks to consider when calculating the demand charge.
+        load_profile_selected_times: DataFrame containing the load profile with 
+            datetime index and at least one column named 'kWh' containing half-hourly
+            load data. This dataframe will contain load data for selected periods
+            based on the tariff component, calculated before being passed to this function.
+        tariff_category: A string representing the tariff category, used
+            to store the charges in the results dictionary.
+        demand_component:A string naming the demand charge component, used
+            to store the charges in the results dictionary.
+        results:A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results.
+
+    Returns:
+        float: The total demand charge calculated based on the demand component details and load 
+            profile data.
+
+    Notes:
+        - The function updates the `results[<tariff_category>]` DataFrame with two new columns for the specified
+          `demand_component`:
+            - 'Avg_kW_Dem_<demand_component>': The average demand in kW.
+            - 'Demand_<demand_component>': The total demand charge in dollars.
+    """
+
+    # Get any value(s) for min demand present in the tariff definition:
+    min_demand = 0
+    min_demand_from_charge = 0
+    if 'Min Demand (kW)' in dem_component_details:
+        min_demand = dem_component_details['Min Demand (kW)']
+    if 'Min Demand Charge ($)' in dem_component_details:
+        if dem_component_details['Value'] > 0:
+            min_demand_from_charge = dem_component_details['Min Demand Charge ($)'] / dem_component_details['Value']
+
+    # Set up an empty array to hold peak values:
+    average_peaks_all = np.empty((0, load_profile_selected_times.shape[1]), dtype=float)
+
+    # Loop through each month present in the tariff component definition to find
+    # peaks
+    for m in dem_component_details['Month']:
+        arr = load_profile_selected_times.loc[load_profile_selected_times.index.month == m, :].copy().values
+        arr.sort(axis=0)
+        arr = arr[::-1]
+
+        # 2 * -> to change units from kWh to kW. Get the average of the peaks (if
+        # the number of peaks is > 1)
+        average_peaks_all = np.append(average_peaks_all, [2 * arr[:num_peaks, :].mean(axis=0)], axis=0)
+
+    # If there is a minimum demand set in the tariff component, depending on the 
+    # type of minimum set, apply here:
+    if min_demand_from_charge > 0:
+        # If the minimum demand comes from min_demand_from_charge, apply it as 
+        # a clipping value
+        average_peaks_all = np.clip(average_peaks_all, a_min=min_demand_from_charge, a_max=None)
+    else:
+        # Otherwise, if it's coming from min_demand (or is <= 0), any 'peak' value
+        # less than the min_demand is set to zero.
+        average_peaks_all[average_peaks_all < min_demand] = 0
+
+    # Sum all average peaks form each month together and use this sum to calculate 
+    # the total demand charge for this bill.
+    average_peaks_all_sum = average_peaks_all.sum(axis=0)
+    results[tariff_category]['Avg_kW_Dem_' + demand_component] = average_peaks_all_sum / len(dem_component_details['Month'])
+    results[tariff_category]['Demand_' + demand_component] = average_peaks_all_sum * dem_component_details['Value']*365/12  # the charges in demand charge should be in $/kW/day
+
+    dem_charge = average_peaks_all_sum * dem_component_details['Value']*365/12
+    
+    return dem_charge
+
+
+def calculate_demand_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculate the total demand charge for all `Demand` tariff components.
+
+    This function acts as a wrapper for `calc_dem()`, passing each component of a
+    `Demand` tariff individually to calculate the charge for that component only.
+    It also calls `time_select()` to pass only relevant parts of the load profile
+    to calculate the demand charge.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a `Demand` key with a nested dictionary where each key represents 
+            a demand period and each value is a dictionary with details specifying
+            month, time and weekdays during which the charge applies, as well as 
+            the units ($/kW/day) and rate of the charge itself.
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The sum of demand charges calculated based on the sum of component
+            charges.
+
+    """
+    demand_charge_total = 0.0
+    for demand_component, demand_component_details in tariff_component['Demand'].items():
+        if 'Number of Peaks' not in demand_component_details:
+            num_of_peaks = 1
+        else:
+            num_of_peaks = demand_component_details['Number of Peaks']
+
+        lp = load_profile.copy()
+        lp_selected_times = time_select(lp, demand_component_details)
+
+        demand_charge_total += calc_dem_(demand_component_details, num_of_peaks, lp_selected_times, tariff_category, demand_component, results)
+
+    return demand_charge_total
+
+
+def calculate_off_peak_demand_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculate the total demand charge for all `Off-Peak Demand` tariff components.
+
+    This function acts as a wrapper for `calc_dem()`, first compiling the load profile
+    during all off-peak periods by repeatedly calling `time_select()` for each 
+    `Off-Peak Demand` component, then passing the resulting load profile to calculate
+    the total off-peak demand charge.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include an `Off_Peak Demand` key with a nested dictionary where each 
+            key represents a demand period and each value is a dictionary with details 
+            specifying month, time and weekdays during which the charge applies, as 
+            well as the units ($/kW/day) and rate of the charge itself.
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The total sum of off-peak demand charges.
+            
+    """
+    lp_off_peak_dem = pd.DataFrame()
+    for opd_component, opd_component_details in tariff_component['Off Peak Demand'].items():
+        lp = load_profile.copy()
+        lp_selected_times = time_select(lp, opd_component_details)
+        lp_off_peak_dem = pd.concat([lp_off_peak_dem, lp_selected_times], axis='rows')
+
+    if 'Number of Peaks' not in opd_component_details:
+        num_of_peaks = 1
+    else:
+        num_of_peaks = opd_component_details['Number of Peaks']
+
+    demand_charge = calc_dem_(opd_component_details, num_of_peaks, lp_off_peak_dem, tariff_category, "Off_Peak", results)
+    
+    return demand_charge
+
+
+def calculate_12_month_demand_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculate the total rolling 12-month demand charge based on a load profile 
+    and tariff component details.
+
+    This function finds the rolling 12-month peak for each month present in the 
+    given load profile, and uses these values to calculate a monthly demand charge.
+    Where only 12 months of load profile data is supplied (default), each month 
+    the peak will be calulated from the start of the load data to the end of the 
+    month.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a `Demand - last 12 Months` key with a nested dictionary where each 
+            key represents a demand period and each value is a dictionary with details 
+            specifying month, time and weekdays during which the charge applies, as 
+            well as the units ($/kW/day) and rate of the charge itself.
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The sum of all rolling charges based on rolling monthly peaks and
+            supplied tariff rates.
+
+    """
+    for demand_component, demand_component_details in tariff_component['Demand - last 12 Months'].items():
+        lp = load_profile.copy()
+
+        # get minimum demand specifications:
+        min_demand = 0
+        min_demand_from_charge = 0
+        if 'Min Demand (kW)' in demand_component_details:
+            min_demand = demand_component_details['Min Demand (kW)']
+        if 'Min Demand Charge ($)' in demand_component_details:
+            if demand_component_details['Value'] > 0:
+                min_demand_from_charge = demand_component_details['Min Demand Charge ($)'] / demand_component_details['Value']
+
+        # Get the overall start and end dates of the given load profile, and set
+        # rolling_date to the start date.
+        start_date = lp.index.min()
+        end_date = lp.index.max()
+        rolling_date = start_date
+        total_charge = 0.0
+        # While the rolling_date is before (or equal to) the end date, calculate
+        # the rolling 12-month peak (during periods covered by this demand charge
+        # component)
+        while rolling_date <= end_date:
+            # Move the rolling date to the start of next month:
+            month_days = rolling_date.daysinmonth
+            month = rolling_date.month
+            rolling_date = rolling_date + pd.to_timedelta(month_days, 'D')
+
+            # Get the 12 months prior to rolling_date, including the current month:
+            monthly_rolling_lp = lp[
+                (lp.index < rolling_date) & 
+                (lp.index >= rolling_date + relativedelta(years=-1))
+            ]
+
+            monthly_rolling_lp_dem_times = time_select(monthly_rolling_lp, demand_component_details)
+
+            # Get the maximum value and *2 to convert to demand assuming half 
+            # hourly time stamps
+            max_rolling_monthly = monthly_rolling_lp_dem_times.max().max() * 2
+            
+            # If the minimum demand comes from min_demand_from_charge, apply it
+            # as a clip (any value lower is set to min_demand_from_charge). Otherwise,
+            # apply as a condition (any value lower is set to zero).
+            if min_demand_from_charge > 0:
+                max_rolling_monthly = (
+                    max_rolling_monthly 
+                    if max_rolling_monthly > min_demand_from_charge 
+                    else min_demand_from_charge
+                )
+            else:
+                max_rolling_monthly = (
+                    max_rolling_monthly 
+                    if max_rolling_monthly > min_demand 
+                    else 0.0
+                )
+
+            # Calculate the charge for this month and sum the rolling total charge
+            month_charge = max_rolling_monthly * month_days * demand_component_details['Value']
+
+            if month in demand_component_details['Month']:
+                total_charge = np.nansum([total_charge, month_charge])
+
+        results[tariff_category]['12MonDemand_' + demand_component] = total_charge
+
+    demand_charge_12_months = results[tariff_category][
+        [col for col in results[tariff_category] if col.startswith('12MonDemand_')]
+    ].sum(axis=1)
+
+    return demand_charge_12_months
+
+
+def calculate_13_month_demand_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculate the total rolling 13-month demand charge based on a load profile 
+    and tariff component details.
+
+    This function finds the rolling 13-month peak for each month present in the 
+    given load profile, and uses these values to calculate a monthly demand charge.
+    Where only 12 months of load profile data is supplied (default), each month 
+    the peak will be calulated from the start of the load data to the end of the 
+    month. 
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component (dict): A dictionary containing tariff details. It should
+            include a `Demand - last 13 Months` key with a nested dictionary where each 
+            key represents a demand period and each value is a dictionary with details 
+            specifying month, time and weekdays during which the charge applies, as 
+            well as the units ($/kW/day) and rate of the charge itself.
+        results (dict): A dict containing key 'LoadInfo' with a pd.DataFrame 
+            value that has column 'Annual_kWh' with a single entry at index 
+            'kWh' that holds the annual energy usage of the given load profile,
+            and key <tariff_category> with a pd.DataFrame that stores tariff component
+            results. Structured as follows:
+            results = {
+                'LoadInfo' : pd.DataFrame(
+                    columns=['Annual_kWh'],
+                    index=['kWh'],
+                    data=[6758021.922]
+                ),
+                <tariff_category> : pd.DataFrame()
+            }
+        tariff_category (str): A string representing the tariff category, used
+            to store the charges in the results dictionary.
+
+    Returns:
+        float: The sum of all rolling charges based on rolling monthly peaks and
+            supplied tariff rates.
+            
+    """
+    for demand_component, demand_component_details in tariff_component['Demand - last 13 Months'].items():
+        lp = load_profile.copy()
+        min_demand = 0
+        min_demand_from_charge = 0
+        if 'Min Demand (kW)' in demand_component_details:
+            min_demand = demand_component_details['Min Demand (kW)']
+        if 'Min Demand Charge ($)' in demand_component_details:
+            if demand_component_details['Value'] > 0:
+                min_demand_from_charge = demand_component_details['Min Demand Charge ($)'] / demand_component_details['Value']
+
+        start_date = lp.index.min()
+        end_date = lp.index.max()
+        rolling_date = start_date
+        total_charge = 0.0
+        while rolling_date <= end_date:
+            month_days = rolling_date.daysinmonth
+            rolling_date = rolling_date + pd.to_timedelta(month_days, 'D')
+            thirteen_months_in_days = 365 + month_days
+
+            # the timedelta here may need to be changed for leap years??
+            monthly_rolling_lp = lp[
+                (lp.index < rolling_date) & 
+                (lp.index >= rolling_date-pd.to_timedelta(thirteen_months_in_days, 'D'))
+            ]   # should be rolling 13 months - using days for the timedelta
+
+            monthly_rolling_lp_dem_times = time_select(monthly_rolling_lp, demand_component_details)
+
+            max_rolling_monthly = monthly_rolling_lp_dem_times.max().max() * 2
+
+            # At the moment: min_dem is set like a clip. SOME of the LC tariffs have
+            # this behaviour explicitly written: if demand is below minimum, user
+            # is charged for the minimum (e.g. CitiPower, ). BUT this might not be the case for everyone.
+            if min_demand_from_charge > 0:
+                max_rolling_monthly = (
+                    max_rolling_monthly 
+                    if max_rolling_monthly > min_demand_from_charge 
+                    else min_demand_from_charge
+                )
+            else:
+                max_rolling_monthly = (
+                    max_rolling_monthly 
+                    if max_rolling_monthly > min_demand 
+                    else 0.0
+                )
+
+            month_charge = max_rolling_monthly * month_days * demand_component_details['Value']
+            total_charge = np.nansum([total_charge, month_charge])
+
+        results[tariff_category]['13MonDemand_' + demand_component] = total_charge
+        
+        demand_charge_13_months = results[tariff_category][
+            [col for col in results[tariff_category] if col.startswith('13MonDemand_')]
+        ].sum(axis=1)
+
+    return demand_charge_13_months
+
+
+def calculate_excess_demand_charge(
+        load_profile:pd.DataFrame, 
+        tariff_component:dict, 
+        results:dict, 
+        tariff_category:str
+) -> float:
+    """Calculates the total demand charge for an Excess Demand tariff.
+
+    This function finds the demand peaks during specified `Excess Demand` periods and
+    `Peak Demand` periods, and uses the positive difference between the two peaks
+    to calculate an excess demand charge (where a positive difference exists). For
+    example, a load profile with a `Peak Demand` max value of 20kW and an `Excess
+    Demand` max value of 25kW will be charged for 5kW of excess demand.
+
+    Args:
+        load_profile: A DataFrame containing half-hourly timeseries
+            data with a DateTime index. It should have at least one column named 'kWh'
+            containing energy usage (load) values for the corresponding half-hour
+            up to index.
+        tariff_component: A dictionary containing tariff details. It should
+            include an `Excess Demand` key with a nested dictionary where each 
+            key represents a demand period and each value is a dictionary with details 
+            specifying month, time and weekdays during which the charge applies, as 
+            well as the units ($/kW/day) and rate of the charge itself.
+        results: dict, not used here, included to simplify control logic.
+        tariff_category: str, not used here, included to simplify control logic.
+
+    Returns:
+        float: The sum of all rolling charges based on rolling monthly peaks and
+            supplied tariff rates.
+            
+    """
+    lp_excess_dem = pd.DataFrame()
+
+    # Create a load profile containing all data during specified Excess Demand
+    # periods:
+    for exc_component, exc_component_details in tariff_component['Excess Demand'].items():
+        lp = load_profile.copy()
+        lp_selected_times = time_select(lp, exc_component_details)
+        lp_excess_dem = pd.concat([lp_excess_dem, lp_selected_times], axis='rows')
+
+    if 'Number of Peaks' not in exc_component_details:
+        num_of_peaks = 1
+    else:
+        num_of_peaks = exc_component_details['Number of Peaks']
+
+    # Now that the dataframe with 'Excess' demand (all non-Peak demand times)
+    # has been created, we need to find the monthly peaks in these data and
+    # compare against the monthly peaks during 'Peak' time. 
+
+    # To find 'Peak' time load profile, use the inverse of the 'Excess' load profile:
+    non_excess_dem = load_profile[~load_profile.index.isin(lp_excess_dem.index)].copy()
+
+    excess_demand_charge = 0.0
+    for m in lp_excess_dem.index.month.unique():
+
+        # Get 'Peak' period peaks:
+        non_excess_month = non_excess_dem.loc[non_excess_dem.index.month == m, :].copy()
+        num_days_in_month = non_excess_month.index[0].daysinmonth
+
+        # *2 to go form kWh -> kW (half-hourly)
+        non_excess_month = non_excess_month.values * 2
+        non_excess_month.sort(axis=0)
+        non_excess_month = non_excess_month[::-1]
+
+        non_excess_month_peaks = non_excess_month[:num_of_peaks, :]
+
+        # Get 'Excess' period peaks:
+        excess_month = lp_excess_dem.loc[lp_excess_dem.index.month == m, :].copy().values * 2
+        excess_month.sort(axis=0)
+        excess_month = excess_month[::-1]
+        excess_month_peaks = excess_month[:num_of_peaks, :]
+
+        # Find the positive difference between excess - peak. Where peak > excess,
+        # set difference to 0.0.
+        difference = excess_month_peaks - non_excess_month_peaks
+        difference[difference < 0] = 0.0
+
+        excess_dem_charge = np.sum(difference * exc_component_details['Value'] * num_days_in_month)
+        excess_demand_charge += excess_dem_charge
+    
+    return excess_demand_charge
+
+
 def tariff_bill_calculator(
         load_profile:pd.DataFrame, 
         tariff:dict
-) -> dict[str:pd.DataFrame]:
+) -> dict:
     """
-    Calculate tariff costs.
+    Calculate the billing charges for large commercial tariffs based on the load profile and 
+    tariff details.
 
-    Calculates the bill outcomes under the chosen network or retail tariff for the
-    relevant part of the load, either all (network) or just firming (retail).
+    This function computes the energy bill for a large commercial load profile, including 
+    daily, fixed, flat rate, block, time-of-use (TOU), demand, and excess demand charges. It also 
+    handles retailer-specific tariff adjustments and calculates energy charges. The results are 
+    stored in a dictionary with detailed billing information for each tariff component.
 
-    :param load_profile: Dataframe with at least one column containing datetime
-        data named 'TS' and one column containing load data (floats) in kWh named
-        'kWh'. 
-    :param tariff: nested dict containing the chosen network or retail tariff rates
-        formatted according to the correspoding tariff type structure. Example
-        tariff structure templates can be found in templates/tariff_structure_template.json.
-    
-    :return: Results are returned in a dictionary with keys 'LoadInfo' and 'Retailer'
-        with dataframe values. The 'Retailer' dataframe column names are determined by
-        the components of the chosen tariff, for example:
-        results = {
-            'LoadInfo' : pd.DataFrame(
-                {
-                    'Annual_kWh' : [782630.67]
-                },
-                index = ['kWh']
-            ),
-            'Retailer' : pd.DataFrame(
-                {
-                    'Charge_FiT_Rebate' : [0], 
-                    'Charge_Daily' : [19597.58], 
-                    'Charge_FlatRate' : [45630.52521],
-                    'Avg_kW_Peak Demand' : [111.318667], 
-                    'Demand_Peak Demand' : [64522.525573], 
-                    'Charge_Demand' : [64522.525573],
-                    'Charge_Excess_Demand' : [0.0], 
-                    'Bill' : [129750.630783], 
-                    'energy_charge' : [45630.52521]
-                },
-                index = ['kWh']
-            )
-        }
-                                
+    This function was originally written for the following tools and has been adapted
+    for use in SunSPOT.
+    - CEEM Bill_calculator github - https://github.com/UNSW-CEEM/Bill_Calculator
+    - CEEM tariff tool github - https://github.com/UNSW-CEEM/TDA_Python
+
+    Args:
+        load_profile: DataFrame containing the load profile data for one year. 
+            It should have two columns: 'TS' (timestamp) and 'kWh' (kilowatt-hours).
+        tariff: Dictionary containing tariff details, including tariff parameters and 
+            types of charges.
+        network_load: optional, DataFrame containing network load data. This 
+            parameter is not used in this function but included for consistency with other tools.
+        fit: optional, flag indicating whether to include the Feed-in Tariff (FiT) rebate 
+            in the calculations. Defaults to True.
+
+    Returns:
+        results: A dictionary containing billing results for each tariff component. The dictionary 
+            includes
+                - `'LoadInfo'`: DataFrame with annual consumption information.
+                - `'NUOS'`: DataFrame with charges calculated for each component present in the
+                    chosen tariff.
+
+    Notes:
+        - The function uses a dictionary of functions to calculate different types of charges based 
+          on the tariff parameters.
+        - If the tariff provider is a retailer, it adjusts the tariff parameters accordingly.
+        - The function handles a variety of tariff charge types and calculates the total bill and 
+          energy charges for each tariff component.
+        - The 'LoadInfo' DataFrame in the results dictionary provides annual kWh consumption data 
+          and, if applicable, the annual kWh exported.
+        - The function assumes that the load profile data is provided in half-hourly intervals.
+
+    Examples:
+        >>> load_profile = pd.DataFrame({
+        ... 'TS': pd.date_range(start='2023-01-01', periods=8760, freq='30T'),
+        ... 'kWh': np.random.rand(8760)})
+        >>> tariff = {
+        ... "CustomerType": "Commercial",
+        ... "Date_accessed": "2024-02",
+        ... "Distributor": "Ausgrid",
+        ... "Name": "Example Tariff",
+        ... "Parameters": {"NUOS": {<tariff_details>}},
+        ... "ProviderType": "Network",
+        ... "State": "VIC",
+        ... "Tariff ID": "ID01",
+        ... "Type": "TOU",
+        ... "Year": "2024"}
+
+        >>> results = bill_calculator_large_commercial_tariffs(load_profile, tariff)
+        >>> results['LoadInfo']
+                Annual_kWh  Annual_kWh_exp
+        kWh     6758021.92            -0.0
+
+        >>> results['NUOS']
+            Charge_Daily  ...         Bill    energy_charge
+        kWh     68860.43  ... 1.469779e+06        202740.66
+            
     """
-
     load_profile = load_profile[['TS', 'kWh']].copy()
     load_profile.set_index('TS', inplace=True)
     load_profile = load_profile.fillna(0)
 
-    def time_select(
-            load_profile_s:pd.DataFrame, 
-            par:dict
-    ) -> pd.DataFrame:
-        """
-        Select part of DataFrame by time.
-
-        This function selects and returns parts of a timeseries Dataframe determined
-        by the dates and times covered by a given component of the chosen tariff.
-        For example, where a Summer Peak tariff component applies from December-February on 
-        weekdays between 2-8pm, this function will return a Dataframe containing
-        timeseries data for December-February weekdays between 2-8pm. 
-
-        :param load_profile_s: Dataframe with DateTimeIndex and at least one column
-            containing load data named 'kWh'.
-        :param par: nested dict containing data for one component of the chosen tariff,
-            must contain keys 'TimeIntervals' and 'Month' at least, optionally containing
-            'Weekday' and 'Weekend' keys. Formatted per standard tariff formatting.
-        
-        :return: Dataframe with DateTimeIndex and at least one column of load data 
-            named 'kWh' containing data for dates and times specified by the given 
-            component of the selected tariff.
-        """
-        load_profile_s_t_a = pd.DataFrame()
-        for k2_1, v2_1, in par['TimeIntervals'].items():
-            if v2_1[0][0:2] == '24':
-                v2_1[0] = v2_1[1].replace("24", "00")
-            if v2_1[1][0:2] == '24':
-                v2_1[1] = v2_1[1].replace("24", "00")
-            if v2_1[0] != v2_1[1]:
-                load_profile_s_t = load_profile_s.between_time(start_time=v2_1[0], end_time=v2_1[1],
-                                                               include_start=False, include_end=True)
-            else:
-                load_profile_s_t = load_profile_s.copy()
-
-            if not par['Weekday']:
-                load_profile_s_t = load_profile_s_t.loc[load_profile_s_t.index.weekday >= 5].copy()
-
-            if not par['Weekend']:
-                load_profile_s_t = load_profile_s_t.loc[load_profile_s_t.index.weekday < 5].copy()
-
-            load_profile_s_t = load_profile_s_t.loc[load_profile_s_t.index.month.isin(par['Month']), :].copy()
-
-            load_profile_s_t_a = pd.concat([load_profile_s_t_a, load_profile_s_t])
-        return load_profile_s_t_a
-
-    # Calculate imports and exports
+    ## Set up "results" dictionary to store calculated consumption and tariff
+    ## charges.
     results = {}
 
-    Temp_imp = load_profile.values
-    Temp_exp = Temp_imp.copy()
-    Temp_imp[Temp_imp < 0] = 0
-    Temp_exp[Temp_exp > 0] = 0
-    load_profile_import = pd.DataFrame(Temp_imp, columns=load_profile.columns, index=load_profile.index)
-    load_profile_export = pd.DataFrame(Temp_exp, columns=load_profile.columns, index=load_profile.index)
+    # Calculate imports and exports
+    temp_import = load_profile.values
+    temp_export = temp_import.copy()
+    temp_import[temp_import < 0] = 0
+    temp_export[temp_export > 0] = 0
 
+    lp_net_import = pd.DataFrame(temp_import, columns=load_profile.columns, index=load_profile.index)
+
+    # Store annual consumption information in results dict, as a dataframe
+    # under the key 'LoadInfo':
     results['LoadInfo'] = pd.DataFrame(index=[col for col in load_profile.columns],
-                                       data=np.sum(load_profile_import.values, axis=0), columns=['Annual_kWh'])
+                                       data=np.sum(lp_net_import.values, axis=0), columns=['Annual_kWh'])
     
-    # Removed fit lines
+
     # If it is retailer put retailer as a component to make it similar to network tariffs
     if tariff['ProviderType'] == 'Retailer':
         tariff_temp = tariff.copy()
@@ -145,341 +1216,43 @@ def tariff_bill_calculator(
         tariff_temp['Parameters'] = {'Retailer': tariff['Parameters']}
         tariff = tariff_temp.copy()
 
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        results[TarComp] = pd.DataFrame(index=results['LoadInfo'].index)
+    func_dict = {
+        'Daily' : (calculate_daily_charge, 'Charge_Daily'),
+        'Fixed' : (calculate_fixed_charge, 'Charge_Fixed'),
+        'FlatRate' : (calculate_flatrate_charge, 'Charge_FlatRate'),
+        'BlockAnnual' : (calculate_annual_block_charge, 'Charge_BlockAnnual'),
+        'BlockQuarterly' : (calculate_quarterly_block_charge, 'Charge_BlockQuarterly'),
+        'BlockMonthly' : (calculate_monthly_block_charge, 'Charge_BlockMonthly'),
+        'BlockDaily' : (calculate_daily_block_charge, 'Charge_BlockDaily'),
+        'TOU' : (calculate_time_of_use_charge, 'Charge_TOU'),
+        'Demand' : (calculate_demand_charge, 'Charge_Demand'),
+        'Off Peak Demand' : (calculate_off_peak_demand_charge, 'Charge_Off_Peak_Demand'),
+        'Demand - last 12 Months' : (calculate_12_month_demand_charge, 'Charge_12_Mon_Demand'),
+        'Demand - last 13 Months' : (calculate_13_month_demand_charge, 'Charge_13_Mon_Demand'),
+        'Excess Demand' : (calculate_excess_demand_charge, 'Charge_Excess_Demand')
+    }
+    
+    # Set up another entry to results dict to contain charge/bill results for 
+    # the network component (called "Retailer" for Large Comms for consistency)
+    # with small business/residential.
+    for component_type, component_details in tariff['Parameters'].items():
+        results[component_type] = pd.DataFrame(index=results['LoadInfo'].index)
+        results[component_type]['Charge_FiT_Rebate'] = 0
 
-    # Check if daily exists and calculate the charge
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'Daily' in TarCompVal.keys():
-            num_days = (len(load_profile.index.normalize().unique()) - 1)
-            break
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'Daily' in TarCompVal.keys():
-            results[TarComp]['Charge_Daily'] = num_days * TarCompVal['Daily']['Value']
-
-    # Fixed component for bill
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'Fixed' in TarCompVal.keys():
-            results[TarComp]['Charge_Fixed'] = TarCompVal['Fixed']['Value']
-
-    # Energy
-    # Flat Rate:
-    # Check if flat rate charge exists and calculate the charge
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'FlatRate' in TarCompVal.keys():
-            results[TarComp]['Charge_FlatRate'] = results['LoadInfo']['Annual_kWh'] * TarCompVal['FlatRate']['Value']
-
-
-    # Block Annual:
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'BlockAnnual' in TarCompVal.keys():
-            block_use = results['LoadInfo'][['Annual_kWh']].copy()
-            block_use_charge = block_use.copy()
-            # separating the blocks of usage
-            lim = 0
-            for k, v in TarCompVal['BlockAnnual'].items():
-                block_use[k] = block_use['Annual_kWh']
-                block_use[k][block_use[k] > float(v['HighBound'])] = float(v['HighBound'])
-                block_use[k] = block_use[k] - lim
-                block_use[k][block_use[k] < 0] = 0
-                lim = float(v['HighBound'])
-                block_use_charge[k] = block_use[k] * v['Value']
-            del block_use['Annual_kWh']
-            del block_use_charge['Annual_kWh']
-            results[TarComp]['Charge_BlockAnnual'] = block_use_charge.sum(axis=1)
-
-    # Block Quarterly:
-    # check if it has quarterly and if yes calculate the quarterly energy
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'BlockQuarterly' in TarCompVal.keys():
-            for Q in range(1, 5):
-                load_profile_q = load_profile_import.loc[
-                                 load_profile_import.index.month.isin(list(range((Q - 1) * 3 + 1, Q * 3 + 1))), :]
-                results['LoadInfo']['kWh_Q' + str(Q)] = [
-                    np.nansum(load_profile_q[col].values[load_profile_q[col].values > 0])
-                    for col in load_profile_q.columns]
-            break
-
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'BlockQuarterly' in TarCompVal.keys():
-            for Q in range(1, 5):
-                block_use = results['LoadInfo'][['kWh_Q' + str(Q)]].copy()
-                block_use_charge = block_use.copy()
-                lim = 0
-                for k, v in TarCompVal['BlockQuarterly'].items():
-                    block_use[k] = block_use['kWh_Q' + str(Q)]
-                    block_use[k][block_use[k] > float(v['HighBound'])] = float(v['HighBound'])
-                    block_use[k] = block_use[k] - lim
-                    block_use[k][block_use[k] < 0] = 0
-                    lim = float(v['HighBound'])
-                    block_use_charge[k] = block_use[k] * v['Value']
-                del block_use['kWh_Q' + str(Q)]
-                del block_use_charge['kWh_Q' + str(Q)]
-                results[TarComp]['C_Q' + str(Q)] = block_use_charge.sum(axis=1)
-            results[TarComp]['Charge_BlockQuarterly'] = results[TarComp][
-                ['C_Q' + str(Q) for Q in range(1, 5)]].sum(axis=1)
-
-    # Block Monthly:
-    # check if it has Monthly and if yes calculate the Monthly energy
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'BlockMonthly' in TarCompVal.keys():
-            for m in range(1, 13):
-                load_profile_m = load_profile_import.loc[load_profile_import.index.month == m, :]
-                results['LoadInfo']['kWh_m' + str(m)] = [
-                    np.nansum(load_profile_m[col].values[load_profile_m[col].values > 0])
-                    for col in load_profile_m.columns]
-            break
-
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'BlockMonthly' in TarCompVal.keys():
-            for Q in range(1, 13):
-                block_use = results['LoadInfo'][['kWh_m' + str(Q)]].copy()
-                block_use_charge = block_use.copy()
-                lim = 0
-                for k, v in TarCompVal['BlockMonthly'].items():
-                    block_use[k] = block_use['kWh_m' + str(Q)]
-                    block_use[k][block_use[k] > float(v['HighBound'])] = float(v['HighBound'])
-                    block_use[k] = block_use[k] - lim
-                    block_use[k][block_use[k] < 0] = 0
-                    lim = float(v['HighBound'])
-                    block_use_charge[k] = block_use[k] * v['Value']
-                del block_use['kWh_m' + str(Q)]
-                del block_use_charge['kWh_m' + str(Q)]
-                results[TarComp]['C_m' + str(Q)] = block_use_charge.sum(axis=1)
-            results[TarComp]['Charge_BlockMonthly'] = results[TarComp][['C_m' + str(Q) for Q in range(1, 13)]].sum(
-                axis=1)
-
-    # Block Daily:
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'BlockDaily' in TarCompVal.keys():
-            DailykWh = load_profile_import.resample('D').sum()
-            block_use_temp_charge = DailykWh.copy()
-            block_use_temp_charge.iloc[:, :] = 0
-            lim = 0
-            for k, v in TarCompVal['BlockDaily'].items():
-                block_use_temp = DailykWh.copy()
-                block_use_temp[block_use_temp > float(v['HighBound'])] = float(v['HighBound'])
-                block_use_temp = block_use_temp - lim
-                block_use_temp[block_use_temp < 0] = 0
-                lim = float(v['HighBound'])
-                block_use_temp_charge = block_use_temp_charge + block_use_temp * v['Value']
-            results[TarComp]['Charge_BlockDaily'] = block_use_temp_charge.sum(axis=0)
-
-
-    # TOU energy
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'TOU' in TarCompVal.keys():
-            load_profile_ti = pd.DataFrame()
-            load_profile_ti_charge = pd.DataFrame()
-            for k, v in TarCompVal['TOU'].items():
-                this_part = v.copy()
-                if 'Weekday' not in this_part:
-                    this_part['Weekday'] = True
-                    this_part['Weekend'] = True
-                if 'TimeIntervals' not in this_part:
-                    this_part['TimeIntervals'] = {'T1': ['00:00', '00:00']}
-                if 'Month' not in this_part:
-                    this_part['Month'] = list(range(1, 13))
-                load_profile_t_a = time_select(load_profile_import, this_part)
-                load_profile_ti[k] = load_profile_t_a.sum()
-                results[TarComp]['kWh_' + k] = load_profile_ti[k].copy()
-                load_profile_ti_charge[k] = this_part['Value'] * load_profile_ti[k]
-                results[TarComp]['TOU_' + k] = load_profile_ti_charge[k].copy()
-            results[TarComp]['Charge_TOU'] = load_profile_ti_charge.sum(axis=1)
-
-    # Demand charge:
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        if 'Demand' in TarCompVal.keys():
-            for DemCharComp, DemCharCompVal in TarCompVal['Demand'].items():
-                if 'Demand Window Length' not in DemCharCompVal:
-                    ts_num = 1
-                else:   
-                    ts_num = DemCharCompVal['Demand Window Length']  # number of timestamp
-                
-                if 'Number of Peaks' not in DemCharCompVal:
-                    num_of_peaks = 1
-                else:
-                    num_of_peaks = DemCharCompVal['Number of Peaks']
-                if ts_num > 1:
-                    load_profile_r = load_profile_import.rolling(ts_num, min_periods=1).mean()
-                else:
-                    load_profile_r = load_profile_import.copy()
-                load_profile_f = time_select(load_profile_r, DemCharCompVal)
-
-                # if capacity charge is applied meaning the charge only applies when you exceed the capacity for
-                #  a certain number of times
-                if 'Capacity' in DemCharCompVal:
-                    # please note the capacity charge only works with user's demand peak (not coincident peak)
-                    # Customers can exceed their capacity level on x separate days per month during each interval
-                    # (day or night). If they exceed more than x times, they will be charged for the highest
-                    # exceedance of their capacity the capacity charge (if they don't exceed) is already included
-                    # in the fixed charge so they only pay for the difference
-                    capacity = DemCharCompVal['Capacity']['Value']
-                    if 'Capacity Exceeded No' in DemCharCompVal:
-                        cap_exc_no = DemCharCompVal['Capacity Exceeded No']
-                    else:
-                        cap_exc_no = 0
-                    load_profile_f = load_profile_f - (capacity / 2)
-                    load_profile_f = load_profile_f.clip(lower=0)
-                    load_profile_f_g = load_profile_f.groupby(load_profile_f.index.normalize()).max()
-                    for m in range(1, 13):
-                        arr = load_profile_f_g.loc[load_profile_f_g.index.month == m, :].copy().values
-                        cap_exc_no_val = np.sum(arr > 0, axis=0)
-                        load_profile_f.loc[load_profile_f.index.month == m, cap_exc_no_val <= cap_exc_no] = 0
-                    load_profile_f2 = load_profile_f.copy()
-                else:
-                    load_profile_f2 = load_profile_f.copy()
-                based_on_network_peak = False
-                if 'Based on Network Peak' in DemCharCompVal:
-                    if DemCharCompVal['Based on Network Peak']:
-                        based_on_network_peak = True
-                # minimum demand or demand charge
-                min_dem1 = 0
-                min_dem2 = 0
-                if 'Min Demand (kW)' in DemCharCompVal:
-                    min_dem1 = DemCharCompVal['Min Demand (kW)']
-                if 'Min Demand Charge ($)' in DemCharCompVal:
-                    if DemCharCompVal['Value'] > 0:
-                        min_dem2 = DemCharCompVal['Min Demand Charge ($)'] / DemCharCompVal['Value']
-                min_dem = min(min_dem1, min_dem2)
-
-                average_peaks_all = np.empty((0, load_profile_f.shape[1]), dtype=float)
-                for m in DemCharCompVal['Month']:
-                    arr = load_profile_f.loc[load_profile_f.index.month == m, :].copy().values
-                    arr.sort(axis=0)
-                    arr = arr[::-1]
-
-                    if arr.size != 0:
-                        # Removed a multiple of 2 here that was used to convert from kWh->kW (script previously used exclusively for half-hourly data)
-                        average_peaks_all = np.append(average_peaks_all, [np.nanmean(arr[:num_of_peaks, :], axis=0)], axis=0)
-                
-                # Changed the following line to set values in the array below
-                # min_dem to zero, rather than clipping. This behaviour is modified
-                # throughout.
-                # average_peaks_all = np.clip(average_peaks_all, a_min=min_dem, a_max=None)
-                average_peaks_all[average_peaks_all < min_dem] = 0
-
-                average_peaks_all_sum = np.nansum(average_peaks_all, axis=0)
-                results[TarComp]['Avg_kW_' + DemCharComp] = average_peaks_all_sum / len(DemCharCompVal['Month'])
-
-
-                # Sum of all the peak demand amounts for each month (kW*month) * tariff ($/kW/day) * days/months
-                # imagine 2 months of data, one 80kW peak and one 40kW peak. * $10/kW/day * days per month.
-                results[TarComp]['Demand_' + DemCharComp] = average_peaks_all_sum * DemCharCompVal['Value']*365/12  # the charges in demand charge should be in $/kW/day
-                results[TarComp]['Charge_Demand'] = results[TarComp][
-                    [col for col in results[TarComp] if col.startswith('Demand_')]].sum(axis=1)
-                
-                
-        if 'Demand - last 12 Months'in TarCompVal.keys(): 
-            for DemCharComp, DemCharCompVal in TarCompVal['Demand - last 12 Months'].items():
-                if 'Demand Window Length' not in DemCharCompVal:
-                    ts_num = 1
-                else:   
-                    ts_num = DemCharCompVal['Demand Window Length']  # number of timestamp
-                
-                if 'Number of Peaks' not in DemCharCompVal:
-                    num_of_peaks = 1
-                else:
-                    num_of_peaks = DemCharCompVal['Number of Peaks']
-                if ts_num > 1:
-                    load_profile_r = load_profile_import.rolling(ts_num, min_periods=1).mean()
-                else:
-                    load_profile_r = load_profile_import.copy()
-
-                last_12_months_load = load_profile_r.iloc[-24*2*30*12:, :] #assuming months have 30 days
-
-                load_profile_f = time_select(last_12_months_load, DemCharCompVal)
-
-                max_peak = load_profile_f.max().max()  # Maximum peak across all timestamps
-            
-                # Calculate the charge based on the maximum peak
-                charge = max_peak * DemCharCompVal['Value'] * 365 # Charge in $/kW/day            
-                results[TarComp]['Charge_12MonDemand'] = charge
-
-        if 'Demand - last 13 Months'in TarCompVal.keys(): 
-            for DemCharComp, DemCharCompVal in TarCompVal['Demand - last 13 Months'].items():
-                if 'Demand Window Length' not in DemCharCompVal:
-                    ts_num = 1
-                else:   
-                    ts_num = DemCharCompVal['Demand Window Length']  # number of timestamp
-                
-                if 'Number of Peaks' not in DemCharCompVal:
-                    num_of_peaks = 1
-                else:
-                    num_of_peaks = DemCharCompVal['Number of Peaks']
-                if ts_num > 1:
-                    load_profile_r = load_profile_import.rolling(ts_num, min_periods=1).mean()
-                else:
-                    load_profile_r = load_profile_import.copy()
-
-                last_13_months_load = load_profile_r.iloc[-24*2*30*13:, :] #assuming months have 30 days
-
-                load_profile_f = time_select(last_13_months_load, DemCharCompVal)
-
-                max_peak = load_profile_f.max().max()  # Maximum peak across all timestamps
-            
-                # Calculate the charge based on the maximum peak
-                charge = max_peak * DemCharCompVal['Value'] * 365  # Charge in $/kW/day
-                results[TarComp]['Charge_13MonDemand'] = charge
-
-        if "Excess Demand" in TarCompVal.keys(): 
-            peaks = []
-            for DemCharComp, DemCharCompVal in TarCompVal['Excess Demand'].items():
-                if 'Demand Window Length' not in DemCharCompVal:
-                    ts_num = 1
-                else:   
-                    ts_num = DemCharCompVal['Demand Window Length']  # number of timestamp
-                
-                if 'Number of Peaks' not in DemCharCompVal:
-                    num_of_peaks = 1
-                else:
-                    num_of_peaks = DemCharCompVal['Number of Peaks']
-                if ts_num > 1:
-                    load_profile_r = load_profile_import.rolling(ts_num, min_periods=1).mean()
-                else:
-                    load_profile_r = load_profile_import.copy()
-                load_profile_f = time_select(load_profile_r, DemCharCompVal)
-
-                ex_average_peaks_all = np.empty((0, load_profile_f.shape[1]), dtype=float)
-                for m in DemCharCompVal['Month']:
-                    arr = load_profile_f.loc[load_profile_f.index.month == m, :].copy().values
-                    arr.sort(axis=0)
-                    arr = arr[::-1]
-                    ex_average_peaks_all = np.append(ex_average_peaks_all, [arr[:num_of_peaks, :].mean(axis=0)],axis=0)
-                    # ex_average_peaks_all = np.clip(ex_average_peaks_all, a_min=min_dem, a_max=None)
-                    ex_average_peaks_all[ex_average_peaks_all < min_dem] = 0
-
-                peaks.append(ex_average_peaks_all)
-            max_peaks = np.max(peaks, axis=0)
-            excess_peaks = np.maximum(max_peaks - ex_average_peaks_all, 0)
-            average_peaks_all_sum = excess_peaks.sum(axis=0)
-            results[TarComp]['Avg_kW_' + DemCharComp] = average_peaks_all_sum / len(DemCharCompVal['Month'])
-            results[TarComp]['C_' + DemCharComp] = average_peaks_all_sum * DemCharCompVal['Value']*365/12  # the charges in demand charge should be in $/kW/day
-            results[TarComp]['Charge_Excess_Demand'] = results[TarComp][
-                [col for col in results[TarComp] if col.startswith('C_')]].sum(axis=1)
-
+        # Loop through each charge component in the tariff (e.g. TOU, Demand)
+        # and calculate the amount to be charged under this component
+        for charge_type in component_details.keys():
+            results[component_type][func_dict[charge_type][1]] = func_dict[charge_type][0](lp_net_import, component_details, results, component_type)
 
     energy_comp_list = ['BlockAnnual', 'BlockQuarterly', 'BlockMonthly', 'BlockDaily', 'FlatRate', 'TOU']
     for k, v in results.items():
         if k != 'LoadInfo':
             results[k]['Bill'] = results[k][[col for col in results[k].columns if col.startswith('Charge')]].sum(axis=1)
             results[k]['energy_charge'] = results[k][[col for col in results[k].columns if (col.startswith('Charge') and col.endswith(tuple(energy_comp_list)))]].sum(axis=1)
-    tariff_comp_list = []
-    for TarComp, TarCompVal in tariff['Parameters'].items():
-        for TarComp2, TarCompVal2 in tariff['Parameters'][TarComp].items():
-            tariff_comp_list.append(TarComp2)
-    tariff_comp_list = list(set(tariff_comp_list))
-    energy_lst = [value for value in tariff_comp_list if value in energy_comp_list]
+
     return results
 
 
-# ------------- Add other commercial charges to large commercial tariffs -------------
-# Ellie changes: 
-# Replaced all initial instances of "+=" with just "=". This way the retail and network
-# components can be considered separately, but the underlying structure of the 
-# chosen tariff remains the same.
-# Also updated the structure for PPA bill purposes: this replaces some values with
-# zeroes to avoid double counting network charges in retail bills.
 def add_other_charges_to_tariff(
         tariff: dict, 
         other_charges:dict

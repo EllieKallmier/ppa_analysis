@@ -2,7 +2,6 @@
 import logging
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
 import matplotlib as mpl
@@ -24,6 +23,24 @@ def plot_hybrid_results(
         percentage_results:dict,
         generator_capacities:dict
 ):
+    """Plots the results of an optimal hybrid generation mix, showing contracted 
+    capacity and energy generation.
+
+    This function visualizes the hybrid generation results, including the contracted 
+    capacities of generators based on their percentage of output and the total 
+    contracted energy (in MWh). The results are presented in two subplots: one 
+    for the total contracted energy in MWh, and a pie chart representing the 
+    percentage breakdown of the hybrid mix.
+
+    Args:
+        load_and_gen_data (pd.DataFrame): A DataFrame containing time-series data 
+            with load and generation values in MWh.
+        percentage_results (dict): A dictionary with generator names as keys and 
+            values are sub-dictionaries containing the percentage of hybrid trace 
+            and generator output for each generator.
+        generator_capacities (dict): A dictionary with generator names as keys and 
+            their respective nameplate capacities in MW.
+    """
     simplified_percentages_dict = {
         key : val['Percent of hybrid trace'] for key, val in percentage_results.items()
     }
@@ -98,6 +115,15 @@ def plot_hybrid_results(
 def plot_emissions_bw(
         load_and_gen_data:pd.DataFrame,
 ):
+    """Plots a bow and whisker distribution of emissions (in tCO2-e) due to 
+        unmatched load for each hour of the day.
+
+    Args:
+        load_and_gen_data (pd.DataFrame): A DataFrame containing time-series data for 
+            load, hybrid generation, contracted energy, and associated emissions factors 
+            (e.g., AEI - Average Emissions Intensity). Requires at least columns named
+            'AEI', 'Load', and a datetime index. 
+    """
     emissions_measure = load_and_gen_data.copy()
     cols_to_plot = ['Time']
     for col in emissions_measure.columns:
@@ -105,15 +131,15 @@ def plot_emissions_bw(
             emissions_measure[f'Unmatched Energy - {col}'] = (emissions_measure['Load'] - np.minimum(emissions_measure['Hybrid'], emissions_measure['Contracted Energy'])).clip(lower=0.0)
             emissions_measure[f'Emissions (tCO2-e) - {col}'] = emissions_measure['AEI'] * emissions_measure[f'Unmatched Energy - {col}']
 
-            cols_to_plot.append(col)
+            cols_to_plot.append(f'Emissions (tCO2-e) - {col}')
 
 
     emissions_measure['Time'] = emissions_measure.index.strftime('%H:%M')
-    to_plot_match = emissions_measure[cols_to_plot].copy()
-    to_plot_match = to_plot_match.melt(id_vars=['Time']).rename(columns={'value':'Emissions (tCO2-e)'})
+    to_plot_emissions = emissions_measure[cols_to_plot].copy()
+    to_plot_emissions = to_plot_emissions.melt(id_vars=['Time']).rename(columns={'value':'Emissions (tCO2-e)'})
 
     plt.figure(figsize=(16,8))
-    sns.boxplot(data=to_plot_match, x='Time', y='Emissions (tCO2-e)', hue='variable', flierprops={"marker":'.'}, palette=sns.color_palette('YlGnBu')[0:len(cols_to_plot)*2:2])
+    sns.boxplot(data=to_plot_emissions, x='Time', y='Emissions (tCO2-e)', hue='variable', flierprops={"marker":'.'}, palette=sns.color_palette('YlGnBu')[0:len(cols_to_plot)*2:2])
     plt.title('Emissions due to unmatched load by hour')
     plt.legend(bbox_to_anchor=(1, 1), loc='upper left')
     plt.show()
@@ -123,6 +149,14 @@ def plot_emissions_bw(
 def plot_matching_bw(
         load_and_gen_data:pd.DataFrame
 ):
+    """Plots a bow and whisker distribution of hourly time-matching for each hour 
+        of the day.
+
+    Args:
+        load_and_gen_data (pd.DataFrame): A DataFrame containing time-series data for 
+            load, hybrid generation and contracted energy. Requires at least columns named
+            'Load', 'Hybrid', 'Contracted Energy' and a datetime index. 
+    """
     matching = load_and_gen_data.copy()
     matching['Delivered Hybrid'] = np.minimum(matching['Hybrid'], matching['Contracted Energy'])
 
@@ -130,7 +164,7 @@ def plot_matching_bw(
     for col in load_and_gen_data.columns:
         if 'Load' in col:
             matching[f'Hourly match (%) - {col}'] = np.where(matching[col] == 0, 100, np.minimum(matching['Delivered Hybrid'] / matching[col] * 100, 100))
-            cols_to_plot.append(col)
+            cols_to_plot.append(f'Hourly match (%) - {col}')
 
     matching['Time'] = matching.index.strftime('%H:%M')
     to_plot_match = matching[cols_to_plot].copy()
@@ -152,9 +186,34 @@ def plot_emissions_heatmap(
         load_and_gen_data:pd.DataFrame,
         load_column_to_plot:str
 ):
+    """Plots a heatmap of hourly emissions due to unmatched load.
+
+    This function calculates the emissions (in tCO2-e) caused by unmatched energy 
+    for each hour of the day, based on the specified load column. The heatmap shows 
+    the distribution of emissions across days and hours, allowing for comparison of 
+    emissions over time.
+
+    Args:
+        load_and_gen_data (pd.DataFrame): A DataFrame containing time-series data for 
+            load, hybrid generation, contracted energy, and emissions factors (e.g., AEI).
+            Requires at least columns named 'AEI', 'Load', and a datetime index. 
+        load_column_to_plot (str): The column name representing the load data to be 
+            used for calculating emissions (e.g., 'Load', 'Load with battery').
+
+    Notes:
+        - The emissions are calculated as the product of the Average Emissions Intensity 
+          (AEI) and the unmatched energy, which is the difference between the specified 
+          load column and the minimum of hybrid generation and contracted energy.
+        - The heatmap visualizes emissions over time, with hours on the y-axis and dates 
+          on the x-axis.
+    """
+
     emissions_measure = load_and_gen_data.copy()
-    emissions_measure['Unmatched Energy'] = (emissions_measure[load_column_to_plot] - np.minimum(emissions_measure['Hybrid'], emissions_measure['Contracted Energy'])).clip(lower=0.0)
-    emissions_measure['Emissions (tCO2-e)'] = emissions_measure['AEI'] * emissions_measure['Unmatched Energy']
+    emissions_measure['Unmatched Energy'] = (emissions_measure[load_column_to_plot] \
+                                - np.minimum(emissions_measure['Hybrid'], \
+                                    emissions_measure['Contracted Energy'])).clip(lower=0.0)
+    emissions_measure['Emissions (tCO2-e)'] = emissions_measure['AEI'] * \
+        emissions_measure['Unmatched Energy']
 
     em_results = pd.DataFrame(emissions_measure['Emissions (tCO2-e)'])
     em_results['Hour'] = em_results.index.hour
@@ -208,6 +267,26 @@ def plot_matching_heatmap(
         load_and_gen_data:pd.DataFrame,
         load_column_to_plot:str
 ):
+    """Plots a heatmap of the percentage of load matched by hybrid generation.
+
+    This function calculates the hourly percentage of load matched by hybrid generation, 
+    and visualizes it as a heatmap across hours and days.
+
+    Args:
+        load_and_gen_data (pd.DataFrame): A DataFrame containing time-series data for 
+            load, hybrid generation, contracted energy, and associated time-related 
+            columns. Must have at least columns named 'Load', 'Hybrid' and 
+            'Contracted Energy'.
+        load_column_to_plot (str): The column name representing the load data to be 
+            used for calculating the match percentage (e.g., 'Load', 'Load with battery').
+
+    Notes:
+        - The "Delivered Hybrid" value is the minimum of hybrid generation and contracted energy.
+        - The hourly match percentage is calculated as the ratio of "Delivered Hybrid" to the 
+          specified load column, with a cap of 100% match.
+        - The heatmap visualizes hourly match percentages across days, with hours on the y-axis 
+          and dates on the x-axis.
+    """
     matching = load_and_gen_data.copy()
     matching['Delivered Hybrid'] = np.minimum(matching['Hybrid'], matching['Contracted Energy'])
     matching['Hourly match (%)'] = np.where(
@@ -265,11 +344,23 @@ def plot_matching_heatmap(
 
 # Profile plots
 def plot_avg_seasonal_load(
-    load_and_gen_data:pd.DataFrame,
+    load_data:pd.DataFrame,
     load_region:str,
     load_title:str
 ):
-    seasonal_df = helper_functions.get_seasons(load_and_gen_data)
+    """Plots an average seasonal load profile for a weekday and weekend day.
+
+    This function generates line plots showing the average load for different seasons 
+    (Summer, Autumn, Winter, Spring) across hours of the day, separated by weekday
+    and weekend.
+
+    Args:
+        load_data (pd.DataFrame): A DataFrame containing time-series load data indexed by date and time.
+        load_region (str): The region used to identify public holidays and weekends, affecting load patterns.
+        load_title (str): The title of the plot to be displayed.
+    """
+
+    seasonal_df = helper_functions.get_seasons(load_data)
     weekend_df = helper_functions.get_weekends(seasonal_df, load_region)
 
     weekend_df['Weekend'] = weekend_df['Weekend'].map({0:'Weekday', 1:'Weekend'})
@@ -297,21 +388,40 @@ def plot_avg_seasonal_load(
     
 
 def plot_avg_seasonal_generation(
-    load_and_gen_data:pd.DataFrame,
+    gen_data:pd.DataFrame,
     load_region:str,
-    generator_names:list
+    generator_col_names:list
 ):
+    """Plots the average seasonal generation for each generator across hours of the day.
+
+    This function generates line plots of the average generation for each season
+    for each specified generator.
+
+    Args:
+        gen_data (pd.DataFrame): A DataFrame containing time-series generation, must
+            have a datetime index and generation data in MWh. 
+        load_region (str): The region used to determine public holidays and weekends.
+        generator_col_names (list): A list of generator column names to include 
+            in the plot.
+
+    Notes:
+        - The function generates one subplot for each generator.
+    """
     
-    seasonal_df = helper_functions.get_seasons(load_and_gen_data)
+    seasonal_df = helper_functions.get_seasons(gen_data)
     weekend_df = helper_functions.get_weekends(seasonal_df, load_region)
     gen_list = []
-    for gen in generator_names:
-            if gen != 'out':
-                gen_list.append(gen)
+    for gen in generator_col_names:
+        if gen != 'out':
+            gen_list.append(gen)
 
     gen_df = weekend_df[gen_list + ['Season']].copy()
     gen_df = gen_df.melt(ignore_index=False, id_vars=['Season'])
-    gen_df = gen_df.rename(columns={'variable':'Generator', 'value':'MWh'})  
+
+    if 'UNIT' in gen_df.columns:
+        gen_df = gen_df.rename(columns={'UNIT':'Generator', 'value':'MWh'})  
+    else:
+        gen_df = gen_df.rename(columns={'variable':'Generator', 'value':'MWh'})
     gen_df['Hour'] = gen_df.index.hour
 
     num_gens = len(gen_list)
@@ -337,7 +447,7 @@ def plot_avg_seasonal_generation(
     )
     fig.set_axis_labels('Hour', 'Average Generation (MWh)').set_titles("{col_name}")
     fig.figure.subplots_adjust(top=0.9)
-    fig.figure.suptitle(f'Average daily generation')
+    fig.figure.suptitle('Average daily generation')
     plt.show()
 
 
@@ -369,9 +479,40 @@ def plot_contract_samples(
 # Financial outcomes
 def plot_bill_components(
           bill_results:pd.DataFrame,
+          wholesale_bill_results:pd.DataFrame,
           settlement_period:str
 ):
-    bill_results_to_plot = bill_results.copy()
+    """Plots average daily profiles of load, contracted energy, and hybrid energy 
+        for different contract types.
+
+    This function generates a bar plot for contracted energy and line plots for 
+    specified load types (e.g., load with battery, load with flex) along with 
+    hybrid energy across each hour of the day.
+
+    Args:
+        load_and_gen_data (pd.DataFrame): A DataFrame containing time-series data 
+            for load, hybrid energy, and contracted energy, indexed by datetime.
+        contract_type (str): The type of contract being analyzed, used in the plot title.
+        load_title (str): The title for the plot, typically representing the 
+            load profile or contract details.
+        columns_to_plot (list of str): A list of column names representing the 
+            different load profiles (e.g., "Load", "Load with battery", 
+            "Load with flex") to be plotted as lines.
+
+    Notes:
+        - The colors for the line plots are customized for different load profiles:
+            - 'tomato' for "Load"
+            - 'yellowgreen' for "Load with battery"
+            - 'orange' for "Load with flex"
+            - 'purple' for "Hybrid"
+    """
+
+    # Reformat the bill df here rather than outside of the function:
+    bill_results_to_plot = bill_results[['PPA Final Cost', 'Firming Costs', 'Network Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received', 'Total']].copy()
+
+    # Add the wholesale bill results for comparison here:
+    bill_results_to_plot['No PPA Total'] = wholesale_bill_results['Total'].copy()
+    bill_results_to_plot['No PPA Total'] += bill_results_to_plot['Network Costs']
 
     bill_results_to_plot['Year'] = bill_results_to_plot.index.year
 
@@ -401,7 +542,7 @@ def plot_bill_components(
     ax2.grid(visible=False)
     ax2.axes.get_yaxis().set_visible(False)
 
-    plt.title(f'Bill components by settlement period')
+    plt.title('Bill components by settlement period')
     ax.set_ylabel('Costs and revenues ($)')
     ax.set_xlabel('Settlement period')
     ax.set_xticklabels(bill_results_to_plot.index.values, rotation=0)
@@ -414,11 +555,27 @@ def plot_bill_components(
 
 def plot_cashflow(
         bill_results:pd.DataFrame
-):
+): 
+    """Plots a waterfall chart representing the annual cashflow from various costs and revenues.
+
+    This function generates a waterfall chart that visualizes the annual cashflow by showing the 
+    contributions of different cost and revenue categories, such as PPA costs, firming costs, 
+    network costs, revenue from on-sold renewable energy, and other related revenues/shortfalls. 
+
+    Args:
+        bill_results (pd.DataFrame): A DataFrame containing time-series data on various cost and revenue 
+            categories related to energy bills, indexed by datetime.
+
+    Notes:
+        - The function aggregates data by year and sums it for each relevant column.
+        - The chart visualizes positive (increasing) values in green, negative 
+            (decreasing) values in red, and total values in blue.
+    """
+
+    costs_waterfall = bill_results[['PPA Final Cost', 'Firming Costs', 'Network Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs', 'Shortfall Payments Received', 'Total']].copy()
 
     fig_w = go.Figure()
 
-    costs_waterfall = bill_results.copy()
     costs_waterfall = costs_waterfall.resample('Y').sum(numeric_only=True)
     costs_waterfall['Total'] = None
     costs_waterfall['Year'] = costs_waterfall.index.year
@@ -447,7 +604,7 @@ def plot_cashflow(
     )
 
     fig_w.update_layout(
-        title = f"Annual Cashflow",
+        title = "Annual Cashflow",
         waterfallgroupgap = 0.2,
         height=600,
         width=800,

@@ -56,18 +56,18 @@ def run_battery_optimisation(
 
     m = Model(solver_name=solver)
 
-    I = range(len(excess_load))
+    len_timeseries = range(len(excess_load))
 
-    battery_discharge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in I]
-    battery_charge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in I]
-    soe = [m.add_var(var_type=CONTINUOUS, lb=min_soe, ub=max_soe) for i in I]
+    battery_discharge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in len_timeseries]
+    battery_charge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in len_timeseries]
+    soe = [m.add_var(var_type=CONTINUOUS, lb=min_soe, ub=max_soe) for i in len_timeseries]
 
     # Binary coefficients to disallow charging/discharging simultaneously
-    charge_coef = [m.add_var(var_type=BINARY) for i in I]
-    discharge_coef = [m.add_var(var_type=BINARY) for i in I]
+    charge_coef = [m.add_var(var_type=BINARY) for i in len_timeseries]
+    discharge_coef = [m.add_var(var_type=BINARY) for i in len_timeseries]
 
     # Initial simple objective: minimise cost of firming - firming = excess load - battery discharge
-    m.objective = minimize(xsum((excess_load[i] - battery_discharge[i]) * (wholesale_prices[i]) for i in I))
+    m.objective = minimize(xsum((excess_load[i] - battery_discharge[i]) * (wholesale_prices[i]) for i in len_timeseries))
 
     # TODO: if needed, update to take into account the time interval (to convert from energy to power or vice versa)
 
@@ -85,7 +85,7 @@ def run_battery_optimisation(
 
     # s.t. constraints:
     # 1. Can't charge and discharge at the same time
-    for i in I:
+    for i in len_timeseries:
         m += battery_charge[i] <= excess_gen[i]
         m += battery_discharge[i] <= excess_load[i]
         m += charge_coef[i] + discharge_coef[i] <= 1 
@@ -102,11 +102,11 @@ def run_battery_optimisation(
 
     if status == OptimizationStatus.FEASIBLE or status == OptimizationStatus.OPTIMAL:
         # get results:
-        battery_discharge_result = [battery_discharge[i].x for i in I]
-        battery_charge_result = [battery_charge[i].x for i in I]
-        soe_result = [soe[i].x for i in I]
-        charge_coef_result = [charge_coef[i].x for i in I]
-        discharge_coef_result = [discharge_coef[i].x for i in I]
+        battery_discharge_result = [battery_discharge[i].x for i in len_timeseries]
+        battery_charge_result = [battery_charge[i].x for i in len_timeseries]
+        soe_result = [soe[i].x for i in len_timeseries]
+        charge_coef_result = [charge_coef[i].x for i in len_timeseries]
+        discharge_coef_result = [discharge_coef[i].x for i in len_timeseries]
 
         battery_data = timeseries_data.copy()
         battery_data['Discharge'] = battery_discharge_result
@@ -118,7 +118,6 @@ def run_battery_optimisation(
         battery_data['Load with battery'] = battery_data['Load'] + \
             battery_data['Charge'] - battery_data['Discharge']
         
-        # TODO: add a validation test for this optimisation
         timeseries_data['Load with battery'] = battery_data['Load with battery'].copy()
 
         m.clear()

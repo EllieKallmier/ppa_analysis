@@ -43,101 +43,6 @@ import numpy as np
 import ppa_analysis.tariffs as tariffs
 from ppa_analysis import helper_functions
 
-def yearly_indexation(
-        df: pd.DataFrame,
-        strike_price: float,
-        indexation: float | list[float]
-) -> pd.DataFrame:
-    """
-    Helper function to calculate yearly indexation.
-
-    The function takes a dataframe with an index of type datetime and returns the same dataframe with an additional
-    column named 'Strike Price (Indexed)'. For each year after the initial year in the index, the strike price is
-    increased by the specified indexation rate. If the indexation rate is provided as a float then the same rate is
-    used for all years. If a list is then each year uses the next indexation rate in the list and if there are more
-    years than rates in the list then last rate is reused.
-
-    :param df: with datetime index
-    :param strike_price: in $/MW/h
-    :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
-    """
-
-    years = df.index.year.unique()
-
-    # If the value given for indexation is just a float, or the list isn't as long
-    # as the number of periods, keep adding the last element of the list until
-    # the length is correct.
-    if type(indexation) != list:
-        indexation = [indexation] * len(years)
-
-    while len(indexation) < len(years):
-        indexation.append(indexation[-1])
-
-    spi_map = {}
-    for i, year in enumerate(years):
-        spi_map[year] = strike_price
-        strike_price += strike_price * indexation[i] / 100
-
-    spi_map[year] = strike_price
-
-    df_with_strike_price = df.copy()
-
-    df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price.index.year
-    df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price['Strike Price (Indexed)'].map(spi_map)
-
-    return df_with_strike_price['Strike Price (Indexed)']
-
-
-def quarterly_indexation(
-        df: pd.DataFrame,
-        strike_price: float,
-        indexation: float | list[float]
-) -> pd.DataFrame:
-    """
-    Helper function to calculate quarterly indexation.
-
-    The function takes a dataframe with an index of type datetime and returns the same dataframe with an additional
-    column named 'Strike Price (Indexed)'. For each quarter after the initial quarter in the index, the strike price is
-    increased by the specified indexation rate. If the indexation rate is provided as a float then the same rate is
-    used for all quarters. If a list is given then each quarter uses the next indexation rate in the list and if there
-    are more quarters than rates in the list then last rate is reused.
-
-    :param df: with datetime index
-    :param strike_price: in $/MWh
-    :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
-    """
-
-    years = df.index.year.unique()
-
-    quarters = [(year, quarter) for year in years for quarter in range(1, 5)]
-
-    # If the value given for indexation is just a float, or the list isn't as long
-    # as the number of periods, keep adding the last element of the list until
-    # the length is correct.
-    if type(indexation) != list:
-        indexation = [indexation] * len(quarters)
-
-    while len(indexation) < len(quarters):
-        indexation.append(indexation[-1])
-
-    spi_map = {}
-    for i, quarter in enumerate(quarters):
-        spi_map[quarter] = strike_price
-        strike_price += strike_price * indexation[i] / 100
-
-    spi_map[quarter] = strike_price
-
-    df_with_strike_price = df.copy()
-
-    tuples = list(zip(df_with_strike_price.index.year.values, df_with_strike_price.index.quarter.values))
-
-    df_with_strike_price['Strike Price (Indexed)'] = tuples
-    df_with_strike_price['Strike Price (Indexed)'] = df_with_strike_price['Strike Price (Indexed)'].map(spi_map)
-
-    return df_with_strike_price['Strike Price (Indexed)']
-
 
 def calculate_ppa(
         price_and_load: pd.DataFrame,
@@ -171,7 +76,7 @@ def calculate_ppa(
     """
 
     # add indexed strike_price column to df:
-    indexation_calc = {'Y': yearly_indexation, 'Q': quarterly_indexation}
+    indexation_calc = {'Y': helper_functions.yearly_indexation, 'Q': helper_functions.quarterly_indexation}
     strike_prices_indexed = indexation_calc[index_period](price_and_load, strike_price, indexation)
 
     price_and_load['Strike Price (Indexed)'] = strike_prices_indexed.copy()
@@ -273,9 +178,9 @@ def calculate_firming(
 
     if firming_type == 'Retail':
         firming_costs = calculate_tariff_bill(firming_costs, settlement_period, tariff_details, 'Retail')
-        firming_costs = firming_costs.rename(columns={f'Retail Bill ($)':'Firming Costs'})
+        firming_costs = firming_costs.rename(columns={'Retail Bill ($)':'Firming Costs'})
     else:
-        firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs[f'Firming price']
+        firming_costs['Firming Costs'] = firming_costs['Unmatched Energy'] * firming_costs['Firming price']
 
         firming_costs = firming_costs.resample(settlement_period).sum(numeric_only=True)
 
@@ -307,7 +212,7 @@ def calculate_excess_electricity(
 
     # then selling any excess energy (contracted, but not used by the buyer) - keeping LGCs associated if bundled!!!
     # excess price is determined as either wholesale prices or a fixed price.
-    if type(excess_price) == str and excess_price != 'Wholesale':
+    if isinstance(excess_price, str) and excess_price != 'Wholesale':
         raise ValueError('excess_price should be one of "Wholesale" or a float representing the fixed on-sell price.')
 
     if excess_price == 'Wholesale':
@@ -356,7 +261,6 @@ def calculate_shortfall(
     :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
         the settlement period and an additional column 'Shortfall' specifying the total shortfall penalty in $.
     """
-
 
     allowed_periods = {'Y', 'Q', 'M'}
     if settlement_period not in allowed_periods:
@@ -444,18 +348,35 @@ def calculate_lgcs(
 
     return df_to_check
 
-
-# TODO: add docstring
-# Function to calculate a hypothetical bill under total wholesale exposure, with
-# no PPA or firming arrangements.
-# Includes wholesale purchase of LGCs for equivalent 'annual matching'
-# Assumes LGC prices have been given?
 def calculate_wholesale_bill(
-        df:pd.DataFrame,
+        timeseries_data:pd.DataFrame,
         settlement_period:str,
         lgc_buy_price:float=0.0,
 ) -> pd.DataFrame:
-    data = df.copy()
+    """Calculates the hypothetical wholesale bill for electricity consumption.
+
+    This function calculates the total cost of electricity consumption based on 
+    the wholesale price (RRP) and the load. It also includes the cost of purchasing 
+    Large-Scale Generation Certificates (LGCs) for net annual coverage, assuming LGC 
+    prices have been provided.
+
+    Args:
+        timeseries_data (pd.DataFrame): A DataFrame containing time-series data with 
+            'RRP' (wholesale price) and 'Load' (electricity consumption).
+        settlement_period (str): The frequency at which the data is to be resampled (e.g., 'D' for daily).
+        lgc_buy_price (float, optional): The price of purchasing LGCs (per unit of load). 
+            Defaults to 0.0 if not provided.
+
+    Returns:
+        pd.DataFrame: A DataFrame with the following columns:
+            - 'Wholesale Cost': The total cost of wholesale electricity consumption.
+            - 'LGC Cost': The total cost of purchasing LGCs.
+            - 'Total': The total of wholesale cost and LGC cost.
+    
+    The function assumes that LGC prices are provided and that LGCs are purchased 
+    for net annual coverage based on the load.
+    """
+    data = timeseries_data.copy()
     data['Wholesale Cost'] = data['RRP'] * data['Load']
 
     wholesale_bill = data[['Load', 'Wholesale Cost']].resample(settlement_period)\

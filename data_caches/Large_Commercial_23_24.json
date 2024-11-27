@@ -277,7 +277,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -303,7 +303,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -382,7 +382,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -408,7 +408,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -487,7 +487,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -513,7 +513,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -592,7 +592,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -618,7 +618,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -697,7 +697,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -723,7 +723,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -802,7 +802,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -828,7 +828,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -907,7 +907,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -933,7 +933,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -3431,8 +3431,10 @@
                 "Value": 0.504,
                 "Weekday": true,
                 "Weekend": false
-              },
-              "Off Peak Weekday Demand": {
+              }
+            },
+            "Off Peak Demand" : {
+              "Off Peak Demand Weekday": {
                 "Month": [
                   1,
                   2,
@@ -3462,7 +3464,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Off Peak Weekend Demand": {
+              "Off Peak Demand Weekend": {
                 "Month": [
                   1,
                   2,
@@ -4078,7 +4080,9 @@
                 "Value": 0.364,
                 "Weekday": true,
                 "Weekend": false
-              },
+              }
+            },
+            "Off Peak Demand" : {
               "Off Peak Demand Weekday": {
                 "Month": [
                   1,
@@ -4486,7 +4490,9 @@
                 "Value": 0.348,
                 "Weekday": true,
                 "Weekend": false
-              },
+              }
+            },
+            "Off Peak Demand" : {
               "Off Peak Demand Weekday": {
                 "Month": [
                   1,
@@ -4733,7 +4739,9 @@
                 "Value": 0.106,
                 "Weekday": true,
                 "Weekend": false
-              },
+              }
+            },
+            "Off Peak Demand" : {
               "Off Peak Demand Weekday": {
                 "Month": [
                   1,
@@ -9154,7 +9162,7 @@
               }
             },
             "Excess Demand": {
-              "Weekday Demand outside of peak (in excess of peak demand)": {
+              "Weekday Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -9180,7 +9188,7 @@
                 "Weekday": true,
                 "Weekend": false
               },
-              "Weekend Demand outside of peak (in excess of peak demand)": {
+              "Weekend Demand outside of peak (in excess of peak demad)": {
                 "Month": [
                   1,
                   2,
@@ -9943,7 +9951,9 @@
                 "Value": 0.364,
                 "Weekday": true,
                 "Weekend": false
-              },
+              }
+            },
+            "Off Peak Demand" : {
               "Off Peak Demand Weekday": {
                 "Month": [
                   1,
@@ -10351,7 +10361,9 @@
                 "Value": 0.348,
                 "Weekday": true,
                 "Weekend": false
-              },
+              }
+            },
+            "Off Peak Demand" : {
               "Off Peak Demand Weekday": {
                 "Month": [
                   1,
@@ -10598,7 +10610,9 @@
                 "Value": 0.106,
                 "Weekday": true,
                 "Weekend": false
-              },
+              }
+            },
+            "Off Peak Demand" : {
               "Off Peak Demand Weekday": {
                 "Month": [
                   1,
@@ -18107,91 +18121,6 @@
         "Type": "Demand",
         "Year": "2024"
       }
-    ],
-    "Other Commercial Charges" : [
-      { 
-        "Customer Type": "Commercial",
-        "Energy Charges": {
-          "Peak Rate": {
-            "Unit": "c/kWh",
-            "Value": 6.000
-          },
-          "Shoulder Rate": {
-            "Unit": "c/kWh",
-            "Value": 6.000
-          },
-          "Off-Peak Rate": {
-            "Unit": "c/kWh",
-            "Value": 4.000
-          },
-          "Retailer Demand Charge": {
-            "Unit": "c/kVA/day",
-            "Value": 0.000
-          }
-        },
-        "Metering Charges": {
-          "Meter Provider/Data Agent Charges": {
-            "Unit": "$/Day",
-            "Value": 2.000
-          },
-          "Other Meter Charges": {
-            "Unit": "$/Day",
-            "Value": 0.000
-          }
-        },
-        "Environmental Charges": {
-          "LREC Charge": {
-            "Unit": "c/kWh",
-            "Value": 0.8000
-          },
-          "SREC Charge": {
-            "Unit": "c/kWh",
-            "Value": 0.4000
-          },
-          "State Environment Charge": {
-            "Unit": "c/kWh",
-            "Value": 0.2000
-          }
-        },
-        "AEMO Market Charges": {
-          "AEMO Participant Charge": {
-            "Unit": "c/kWh",
-            "Value": 0.0360
-          },
-          "AEMO Ancillary Services Charge": {
-            "Unit": "c/kWh",
-            "Value": 0.0180
-          }
-        },
-        "Other Variable Charges": {
-          "Other Variable Charge 1": {
-            "Unit": "$/kWh",
-            "Value": ""
-          },
-          "Other Variable Charge 2": {
-            "Unit": "$/kWh",
-            "Value": ""
-          },
-          "Other Variable Charge 3": {
-            "Unit": "$/kWh",
-            "Value": ""
-          }
-        },
-        "Other Fixed Charges": {
-          "Total GST": {
-            "Unit": "$/Bill",
-            "Value": ""
-          },
-          "Other Fixed Charge 1": {
-            "Unit": "$/Bill",
-            "Value": ""
-          },
-          "Other Fixed Charge 2": {
-            "Unit": "$/Bill",
-            "Value": ""
-          }
-        }
-      }
-    ]    
+    ]
   }
 ]

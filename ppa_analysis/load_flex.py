@@ -14,8 +14,20 @@ from ppa_analysis import advanced_settings
 
 
 def _get_daily_load_sums(
-        df: pd.DataFrame  # a pandas df that has DateTime index and 'Load' as a column name
+        df: pd.DataFrame
 ) -> pd.DataFrame:
+    """Calculates the daily sum of load values from the DataFrame.
+
+    This function resamples the data by day ('D') and calculates the sum of 
+    the 'Load' values for each day.
+
+    Args:
+        df (pd.DataFrame): A DataFrame with a DateTime index and a 'Load' column 
+            containing electricity consumption or load values.
+
+    Returns:
+        pd.DataFrame: A DataFrame with the daily sum of 'Load' values.
+    """
     return df['Load'].copy().resample('D').sum(numeric_only=True)
 
 
@@ -23,7 +35,30 @@ def _create_base_days(
         load_profile: pd.DataFrame,
         base_load_quantile: float
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    # First get just the load profile from df:
+    """Creates base load profiles for weekdays and weekends.
+
+    This function calculates base load profiles for weekdays and weekends by 
+    grouping the load data by month and hour, and then computing the specified 
+    quantile (e.g., 0.5 for median) of the load values for each combination of 
+    hour in each month. It returns separate base load profiles for weekdays and 
+    weekends.
+
+    Args:
+        load_profile (pd.DataFrame): A DataFrame containing at least two columns: 
+            'Load' for the load values, and 'Weekend' (int) indicating whether the day 
+            is a weekend (1) or weekday (0).
+        base_load_quantile (float): The quantile value (between 0 and 1) to calculate 
+            the base load (e.g., 0.5 for median load). This value is used to determine
+            the level of inflexibility present in the load (i.e., how much load
+            is not able to shift at all through each day).
+
+    Returns:
+        tuple: A tuple containing two DataFrames:
+            - base_weekday (pd.DataFrame): The base load profile for weekdays, 
+              grouped by month and hour.
+            - base_weekend (pd.DataFrame): The base load profile for weekends, 
+              grouped by month and hour.
+    """
     load_profile = load_profile[['Load', 'Weekend']].copy()
 
     all_weekdays_only = load_profile[load_profile['Weekend'] == 0].copy()
@@ -86,6 +121,9 @@ def daily_load_shifting(
     :param ramp_down_price:float, $/MWh, the cost in the objective function of ramping the load down, used to
         disincentives sharp changes in the load.
     :return:
+        pd.DataFrame, the timeseries data supplied with an additional column 
+            'Load with flex' specifying the load after adding flexibility.
+        
         pd.Dataframe with a datetime index and the columns (all in MWh):
             'Load dispatch': the energy dispatch above the base load profile
             'Contracted Energy': the volume contracted from renewable energy generators
@@ -99,25 +137,25 @@ def daily_load_shifting(
 
     # Because time stamps are time ending for period, to make sure the midnight time stamp is assigned to the
     # right day we shift all time stamps back slightly and use this shifted time to filter by date.
-    timeseries_data = timeseries_data.copy()
-    timeseries_data['DateTime'] = timeseries_data.index.to_series() - timedelta(seconds=1)
-    timeseries_data = timeseries_data.set_index('DateTime', drop=True)
+    timeseries_data_ = timeseries_data.copy()
+    timeseries_data_['DateTime'] = timeseries_data_.index.to_series() - timedelta(seconds=1)
+    timeseries_data_ = timeseries_data_.set_index('DateTime', drop=True)
 
-    timeseries_data['Weekend'] = np.where(timeseries_data.index.to_series().dt.weekday >= 5, 1, 0)
+    timeseries_data_['Weekend'] = np.where(timeseries_data_.index.to_series().dt.weekday >= 5, 1, 0)
 
     results_df = pd.DataFrame(
         columns=['Load dispatch', 'Contracted Energy', 'Original load', 'Base load',
                  'Firming', 'Raised load', 'Ramp up', 'Ramp down']
     )
 
-    daily_load_sums = _get_daily_load_sums(timeseries_data)
-    base_weekday, base_weekend = _create_base_days(timeseries_data, base_load_quantile)
-    all_time_max_load = timeseries_data['Load'].max(numeric_only=True)
+    daily_load_sums = _get_daily_load_sums(timeseries_data_)
+    base_weekday, base_weekend = _create_base_days(timeseries_data_, base_load_quantile)
+    all_time_max_load = timeseries_data_['Load'].max(numeric_only=True)
 
     # run optimisation for each day individually to keep constraints:
     for idx, date in enumerate(daily_load_sums.index):
 
-        data_for_one_day = timeseries_data[timeseries_data.index.date == date.date()].copy()
+        data_for_one_day = timeseries_data_[timeseries_data_.index.date == date.date()].copy()
 
         if data_for_one_day['Weekend'].values[0] == 0:
             weekday_month = base_weekday[base_weekday.Month == date.month]
@@ -147,14 +185,14 @@ def daily_load_shifting(
             original_load = data_for_one_day['Load'].values
             base_load = data_for_one_day['Base Load'].values
             contracted_renewables = data_for_one_day['Contracted Energy'].values
-            wholesale_prices = data_for_one_day[f'RRP'].clip(lower=0.0).values
+            wholesale_prices = data_for_one_day['RRP'].clip(lower=0.0).values
 
             if sum(data_for_one_day['Flexible load']) > 0:
                 # TODO: figure out a better way to catch and add 'missing' days that don't fit the 
                 # conditions to actuall shift!!
 
                 # Start setting up the model:
-                I = range(len(base_load))
+                len_day = range(len(base_load))
 
                 if advanced_settings.solver == 'GUROBI':
                     solver = GUROBI
@@ -165,14 +203,14 @@ def daily_load_shifting(
 
                 m = Model(solver_name=solver)
 
-                load_dispatch = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=all_time_max_load) for i in I]
-                unmatched = [m.add_var(var_type=CONTINUOUS, lb=0.0) for i in I]
-                raised_load = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=all_time_max_load) for i in I]
-                lowered_load = [m.add_var(var_type=CONTINUOUS, lb=-1 * all_time_max_load, ub=0.0) for i in I]
+                load_dispatch = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=all_time_max_load) for i in len_day]
+                unmatched = [m.add_var(var_type=CONTINUOUS, lb=0.0) for i in len_day]
+                raised_load = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=all_time_max_load) for i in len_day]
+                lowered_load = [m.add_var(var_type=CONTINUOUS, lb=-1 * all_time_max_load, ub=0.0) for i in len_day]
 
                 # Add 'ramp' constraints applied as a penalty term in the optimisation:
-                ramp_up = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=np.inf) for i in I]
-                ramp_down = [m.add_var(var_type=CONTINUOUS, lb=-np.inf, ub=0.0) for i in I]
+                ramp_up = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=np.inf) for i in len_day]
+                ramp_down = [m.add_var(var_type=CONTINUOUS, lb=-np.inf, ub=0.0) for i in len_day]
 
                 # Set up objective: to minimise unmatched load and associated cost.
                 # Included in the objective are ramp penalties to disincentivise big jumps,
@@ -183,12 +221,12 @@ def daily_load_shifting(
                          - lowered_load[i] * lower_price \
                          + raised_load[i] * raise_price \
                          + ramp_up[i] * ramp_up_price - \
-                         ramp_down[i] * ramp_down_price) for i in I
+                         ramp_down[i] * ramp_down_price) for i in len_day
                     )
                 )
 
                 # Add defining constraints to optimisation:
-                for i in I:
+                for i in len_day:
                     # total load in any hour is the sum of load_dispatch + base_load
                     m += unmatched[i] >= (load_dispatch[i] + base_load[i]) - contracted_renewables[i]
 
@@ -206,8 +244,8 @@ def daily_load_shifting(
 
                 # Add constraint on the sum of daily load (can't change):
                 # At the moment: there are no allowances for wiggle room here!!
-                m += xsum((load_dispatch[i] + base_load[i]) for i in I) >= load_sum_for_one_day
-                m += xsum((load_dispatch[i] + base_load[i]) for i in I) <= load_sum_for_one_day
+                m += xsum((load_dispatch[i] + base_load[i]) for i in len_day) >= load_sum_for_one_day
+                m += xsum((load_dispatch[i] + base_load[i]) for i in len_day) <= load_sum_for_one_day
 
                 # Run the optimisation, suppressing excess outputs:
                 m.verbose = 0
@@ -219,11 +257,11 @@ def daily_load_shifting(
 
                 if status == OptimizationStatus.OPTIMAL or status == OptimizationStatus.FEASIBLE:
                     # Get results:
-                    dispatch = [load_dispatch[i].x for i in I]
-                    firm = [unmatched[i].x for i in I]
-                    raised = [raised_load[i].x for i in I]
-                    r_up = [ramp_up[i].x for i in I]
-                    r_down = [ramp_down[i].x for i in I]
+                    dispatch = [load_dispatch[i].x for i in len_day]
+                    firm = [unmatched[i].x for i in len_day]
+                    raised = [raised_load[i].x for i in len_day]
+                    r_up = [ramp_up[i].x for i in len_day]
+                    r_down = [ramp_down[i].x for i in len_day]
 
                     day_result = pd.DataFrame(
                         {'Load dispatch': dispatch,
@@ -272,4 +310,6 @@ def daily_load_shifting(
     results_df['DateTime'] = results_df.index.to_series() + timedelta(seconds=1)
     results_df = results_df.set_index('DateTime', drop=True)
 
-    return results_df
+    timeseries_data = pd.concat([timeseries_data, results_df['Load with flex']], axis='columns')
+
+    return timeseries_data, results_df
