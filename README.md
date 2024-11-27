@@ -61,10 +61,8 @@ the tools through its Python API.
 
 The [glossary](glossary.md) provides definitions of key terms including contract types.
 
-# Functionality overview
 
 # Acknowledgements
 
-Files msat_replicator.py, ppa.py, replicate_test.py, residuals.py, scenario_runner.py and tariffs.py were 
-originally written by Nick Gorman as part of the MSAT-PPA Tool here: 
+Much of the functionality and sections of this tool were based on the MSAT-PPA tool developed by Nick Gorman: 
 https://github.com/nick-gorman/MSAT-PPA-Python/tree/e9bef99ff914a826446f24697e983b16c23ced18
