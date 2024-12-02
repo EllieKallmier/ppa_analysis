@@ -68,5 +68,4 @@ The [glossary](glossary.md) provides definitions of key terms including contract
 
 This tool was initially developed under the [RACE for 2030](https://racefor2030.com.au) project [24/7 TRUZERO](https://racefor2030.com.au/project/24-7-renewables-solutions-for-matching-tracking-and-enhancing-corporate-renewables-purchasing/), made possible by support from industry partners Enosi, AGL, Mirvac Ventures, Starling Energy Group and Buildings Alive.
 
-Much of the functionality and sections of this tool were based on the MSAT-PPA tool developed by Nick Gorman: 
-https://github.com/nick-gorman/MSAT-PPA-Python/tree/e9bef99ff914a826446f24697e983b16c23ced18
+Much of the functionality and sections of this tool were based on the [MSAT-PPA tool](https://github.com/nick-gorman/MSAT-PPA-Python/tree/e9bef99ff914a826446f24697e983b16c23ced18) developed by Nick Gorman.
