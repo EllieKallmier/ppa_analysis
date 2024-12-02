@@ -21,23 +21,28 @@ Price data functions:
     - get_preprocessed_price_data: reads from disk generation data in the format produced by
       get_wholesale_price_data
 """
+
 from datetime import datetime
 
 import nemed
 import pandas as pd
-from nemosis import static_table, dynamic_data_compiler
+from nemosis import dynamic_data_compiler, static_table
 
 from ppa_analysis import helper_functions
-from ppa_analysis.helper_functions import get_interval_length, _check_interval_consistency, _check_missing_data
+from ppa_analysis.helper_functions import (
+    _check_interval_consistency,
+    _check_missing_data,
+    get_interval_length,
+)
 
 
 def get_generation_data(
-        cache:str,
-        technology_type_s:list[str],
-        start_date:pd.Timestamp,
-        end_date:pd.Timestamp,
-        period:str='H'
-        ) -> pd.DataFrame:
+    cache: str,
+    technology_type_s: list[str],
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    period: str = "H",
+) -> pd.DataFrame:
     """
     Downloads and process generation data from AEMO.
 
@@ -63,49 +68,65 @@ def get_generation_data(
     # First: get the static table for generators and scheduled loads. This is used
     # to filter for generators by region and type.
     # Credit for example code snippets: https://github.com/UNSW-CEEM/NEMOSIS/blob/master/examples/generator_bidding_data.ipynb (Nick Gorman)
-    dispatch_units = static_table(table_name='Generators and Scheduled Loads',
-                                  raw_data_location=cache,
-                                  update_static_file=True)
+    dispatch_units = static_table(
+        table_name="Generators and Scheduled Loads",
+        raw_data_location=cache,
+        update_static_file=True,
+    )
 
     # Get only relevant columns
-    dispatch_units = dispatch_units[['Station Name', 'Region', 'Technology Type - Descriptor', 'DUID']]
+    dispatch_units = dispatch_units[
+        ["Station Name", "Region", "Technology Type - Descriptor", "DUID"]
+    ]
 
     # Filter for region and technology type, then get a list of the unique remaining DUIDs
     dispatch_units = dispatch_units[
         # (dispatch_units['Region'] == region) &
-        (dispatch_units['Technology Type - Descriptor'].str.upper().isin(technology_type_s))
+        (
+            dispatch_units["Technology Type - Descriptor"]
+            .str.upper()
+            .isin(technology_type_s)
+        )
     ]
-    duids_to_check = dispatch_units['DUID'].values
+    duids_to_check = dispatch_units["DUID"].values
 
     # Need to convert start and end dates to strings and collect all scada data
     # from nemosis:
-    start_date_str = datetime.strftime(start_date, '%Y/%m/%d %H:%M:%S')
-    end_date_str = datetime.strftime(end_date, '%Y/%m/%d %H:%M:%S')
-    scada_data = dynamic_data_compiler(start_time=start_date_str,
-                                    end_time=end_date_str,
-                                    table_name='DISPATCH_UNIT_SCADA',
-                                    raw_data_location=cache,
-                                    select_columns=['DUID', 'SCADAVALUE', 'SETTLEMENTDATE'],
-                                    filter_cols=['DUID'],
-                                    filter_values=([duids_to_check]),
-                                    fformat='parquet',
-                                    keep_csv=False)
+    start_date_str = datetime.strftime(start_date, "%Y/%m/%d %H:%M:%S")
+    end_date_str = datetime.strftime(end_date, "%Y/%m/%d %H:%M:%S")
+    scada_data = dynamic_data_compiler(
+        start_time=start_date_str,
+        end_time=end_date_str,
+        table_name="DISPATCH_UNIT_SCADA",
+        raw_data_location=cache,
+        select_columns=["DUID", "SCADAVALUE", "SETTLEMENTDATE"],
+        filter_cols=["DUID"],
+        filter_values=([duids_to_check]),
+        fformat="parquet",
+        keep_csv=False,
+    )
 
     useable_scada_data = []
     for duid in duids_to_check:
-        tech_type = dispatch_units[dispatch_units['DUID'] == duid]['Technology Type - Descriptor'].values[0]
-        region = dispatch_units[dispatch_units['DUID'] == duid]['Region'].values[0]
+        tech_type = dispatch_units[dispatch_units["DUID"] == duid][
+            "Technology Type - Descriptor"
+        ].values[0]
+        region = dispatch_units[dispatch_units["DUID"] == duid]["Region"].values[0]
 
-        scada_data_gen = scada_data[scada_data['DUID'] == duid].copy()
+        scada_data_gen = scada_data[scada_data["DUID"] == duid].copy()
 
         if not scada_data_gen.empty:
-            scada_data_gen['DateTime'] = pd.to_datetime(scada_data_gen['SETTLEMENTDATE'])
-            scada_data_gen['REGIONID'] = region
-            scada_data_gen['DUID'] = duid + ': ' + tech_type
-            scada_data_gen = scada_data_gen.rename(columns={'DUID': 'UNIT'})
+            scada_data_gen["DateTime"] = pd.to_datetime(
+                scada_data_gen["SETTLEMENTDATE"]
+            )
+            scada_data_gen["REGIONID"] = region
+            scada_data_gen["DUID"] = duid + ": " + tech_type
+            scada_data_gen = scada_data_gen.rename(columns={"DUID": "UNIT"})
 
-            scada_data_gen = scada_data_gen.set_index('DateTime').drop(columns=['SETTLEMENTDATE'])
-            scada_data_gen = scada_data_gen.sort_values(by='DateTime')
+            scada_data_gen = scada_data_gen.set_index("DateTime").drop(
+                columns=["SETTLEMENTDATE"]
+            )
+            scada_data_gen = scada_data_gen.sort_values(by="DateTime")
 
             # SCADA data is given in MW. To convert to MWh we need to know the time
             # interval:
@@ -113,24 +134,25 @@ def get_generation_data(
 
             if _check_interval_consistency(scada_data_gen, int_length):
                 # Convert from MW to MWh:
-                scada_data_gen['SCADAVALUE'] *= (int_length / 60)
-                scada_data_gen['SCADAVALUE'] = scada_data_gen.resample(period, label='right', closed='right').sum(
-                    numeric_only=True)
+                scada_data_gen["SCADAVALUE"] *= int_length / 60
+                scada_data_gen["SCADAVALUE"] = scada_data_gen.resample(
+                    period, label="right", closed="right"
+                ).sum(numeric_only=True)
 
                 # Check to make sure that the earliest data for each gen start at or before
                 # the load start date.
-                non_nan_scada = scada_data_gen.dropna(how='any', axis='rows').copy()
+                non_nan_scada = scada_data_gen.dropna(how="any", axis="rows").copy()
 
                 if not non_nan_scada.empty:
                     if non_nan_scada.first_valid_index().date() <= start_date.date():
                         useable_scada_data.append(non_nan_scada)
             else:
-                print('The interval lengths are different across this generator data.')
+                print("The interval lengths are different across this generator data.")
                 pass
 
     gen_data = pd.concat(useable_scada_data)
     gen_data = _check_missing_data(gen_data)
-    gen_data['SCADAVALUE'] = gen_data['SCADAVALUE'].clip(lower=0.0)
+    gen_data["SCADAVALUE"] = gen_data["SCADAVALUE"].clip(lower=0.0)
 
     return gen_data
 
@@ -146,9 +168,9 @@ def get_preprocessed_gen_data(file, regions):
         formated like '<DUID>: <technology type>.
     """
     gen_data = pd.read_parquet(file)
-    gen_data = gen_data[gen_data['REGIONID'].isin(regions)]
-    gen_data['UNIT'] = gen_data['UNIT'].str.upper()
-    gen_data = gen_data.pivot(columns='UNIT', values='SCADAVALUE')
+    gen_data = gen_data[gen_data["REGIONID"].isin(regions)]
+    gen_data["UNIT"] = gen_data["UNIT"].str.upper()
+    gen_data = gen_data.pivot(columns="UNIT", values="SCADAVALUE")
     return gen_data
 
 
@@ -162,19 +184,19 @@ def get_generator_options(file, regions):
     :return:list[str] of unit names in the format '<DUID>: <technology type>'.
     """
     gen_data = pd.read_parquet(file)
-    gen_data = gen_data[gen_data['REGIONID'].isin(regions)]
-    gen_data['UNIT'] = gen_data['UNIT'].str.upper()
-    gen_options = gen_data['UNIT'].unique()
+    gen_data = gen_data[gen_data["REGIONID"].isin(regions)]
+    gen_data["UNIT"] = gen_data["UNIT"].str.upper()
+    gen_options = gen_data["UNIT"].unique()
     return gen_options
 
 
 def get_load_data(
-    load_file_name:str,
-    datetime_col_name:str,
-    load_col_name:str,
-    day_first:bool,
-    units:str='kWh',
-    period:str='H'
+    load_file_name: str,
+    datetime_col_name: str,
+    load_col_name: str,
+    day_first: bool,
+    units: str = "kWh",
+    period: str = "H",
 ) -> tuple[pd.DataFrame, pd.Timestamp, pd.Timestamp]:
     """
     Reads load data saved to disk in CSV format and carries out data preprocessing.
@@ -199,16 +221,20 @@ def get_load_data(
     """
 
     load_data = pd.read_csv(load_file_name)
-    load_data = load_data.rename(columns={datetime_col_name: 'DateTime', load_col_name : 'Load'})
-    load_data['Load'] = pd.to_numeric(load_data['Load'], errors='coerce')
+    load_data = load_data.rename(
+        columns={datetime_col_name: "DateTime", load_col_name: "Load"}
+    )
+    load_data["Load"] = pd.to_numeric(load_data["Load"], errors="coerce")
 
-    if units == 'kWh':
-        load_data['Load'] = load_data['Load']/1000.0
+    if units == "kWh":
+        load_data["Load"] = load_data["Load"] / 1000.0
 
     # TODO: consider re-formatting datetime col here for consistency
-    load_data['DateTime'] = pd.to_datetime(load_data['DateTime'], infer_datetime_format=True, dayfirst=day_first)
+    load_data["DateTime"] = pd.to_datetime(
+        load_data["DateTime"], infer_datetime_format=True, dayfirst=day_first
+    )
 
-    load_data = load_data.set_index('DateTime')
+    load_data = load_data.set_index("DateTime")
 
     # Check for missing or NaN data and fill with zeros:
     load_data = helper_functions._check_missing_data(load_data)
@@ -216,7 +242,9 @@ def get_load_data(
     # Finally make sure no outliers or values that don't make sense (negative)
     load_data = load_data.clip(lower=0.0)
 
-    load_data = load_data.resample(period, label='right', closed='right').sum(numeric_only=True)
+    load_data = load_data.resample(period, label="right", closed="right").sum(
+        numeric_only=True
+    )
 
     start_date = load_data.first_valid_index()
     end_date = load_data.last_valid_index()
@@ -234,12 +262,10 @@ def get_load_data(
 # separate where possible and a third option to combine maximises speed and removes
 # the chance of making unnecessary calls to nemed.
 
+
 def get_avg_emissions_intensity_data(
-        start_date:pd.Timestamp,
-        end_date:pd.Timestamp,
-        cache:str,
-        period:str='H'
-        ) -> pd.DataFrame:
+    start_date: pd.Timestamp, end_date: pd.Timestamp, cache: str, period: str = "H"
+) -> pd.DataFrame:
     """
     Downloads and process emissions data from AEMO.
 
@@ -257,24 +283,29 @@ def get_avg_emissions_intensity_data(
         for the period.
     """
 
-    start_date_str = datetime.strftime(start_date, '%Y/%m/%d %H:%M')
-    end_date_str = datetime.strftime(end_date, '%Y/%m/%d %H:%M')
-    nemed_result = nemed.get_total_emissions(start_time = start_date_str,
-                                             end_time = end_date_str,
-                                             cache = cache,
-                                             by = None,                         # don't aggregate using inbuilt NEMED functionality - can't do 30 min increments
-                                             assume_energy_ramp=True,           # can set this to False for faster computation / less accuracy
-                                             generation_sent_out=False          # currently NOT considering auxiliary load factors (from static tables)
-                                             )
+    start_date_str = datetime.strftime(start_date, "%Y/%m/%d %H:%M")
+    end_date_str = datetime.strftime(end_date, "%Y/%m/%d %H:%M")
+    nemed_result = nemed.get_total_emissions(
+        start_time=start_date_str,
+        end_time=end_date_str,
+        cache=cache,
+        by=None,  # don't aggregate using inbuilt NEMED functionality - can't do 30 min increments
+        assume_energy_ramp=True,  # can set this to False for faster computation / less accuracy
+        generation_sent_out=False,  # currently NOT considering auxiliary load factors (from static tables)
+    )
 
-    nemed_result['DateTime'] = pd.to_datetime(nemed_result['TimeEnding'])
-    emissions_df = nemed_result.drop(columns=['TimeEnding'])
-    emissions_df = emissions_df.rename(columns={'Region': 'REGIONID'})
-    emissions_df = emissions_df.sort_values(by='DateTime')
-    emissions_df = emissions_df.set_index('DateTime')
-    emissions_df = emissions_df.groupby("REGIONID").resample(
-        period, label='right', closed='right').mean(numeric_only=True).reset_index(level="REGIONID")
-    emissions_df = emissions_df.rename(columns={'Intensity_Index': 'AEI'})
+    nemed_result["DateTime"] = pd.to_datetime(nemed_result["TimeEnding"])
+    emissions_df = nemed_result.drop(columns=["TimeEnding"])
+    emissions_df = emissions_df.rename(columns={"Region": "REGIONID"})
+    emissions_df = emissions_df.sort_values(by="DateTime")
+    emissions_df = emissions_df.set_index("DateTime")
+    emissions_df = (
+        emissions_df.groupby("REGIONID")
+        .resample(period, label="right", closed="right")
+        .mean(numeric_only=True)
+        .reset_index(level="REGIONID")
+    )
+    emissions_df = emissions_df.rename(columns={"Intensity_Index": "AEI"})
     return emissions_df
 
 
@@ -288,16 +319,13 @@ def get_preprocessed_avg_intensity_emissions_data(file, region):
      and columns named 'AEI' containing the average emission intensity data.
     """
     emissions_data = pd.read_parquet(file)
-    emissions_data = emissions_data[emissions_data['REGIONID']==region].copy()
-    emissions_data = emissions_data.loc[:, ['AEI']]
+    emissions_data = emissions_data[emissions_data["REGIONID"] == region].copy()
+    emissions_data = emissions_data.loc[:, ["AEI"]]
     return emissions_data
 
 
 def get_wholesale_price_data(
-    start_date:pd.Timestamp,
-    end_date:pd.Timestamp,
-    cache:str,
-    period:str='H'
+    start_date: pd.Timestamp, end_date: pd.Timestamp, cache: str, period: str = "H"
 ) -> pd.DataFrame:
     """
     Downloads and process wholesale spot price data from AEMO.
@@ -315,23 +343,28 @@ def get_wholesale_price_data(
         -  a column 'REGIONID' specifying the NEM region and a column 'RRP' specifying average price for the period
     """
 
-    start_date_str = datetime.strftime(start_date, '%Y/%m/%d %H:%M:%S')
-    end_date_str = datetime.strftime(end_date, '%Y/%m/%d %H:%M:%S')
+    start_date_str = datetime.strftime(start_date, "%Y/%m/%d %H:%M:%S")
+    end_date_str = datetime.strftime(end_date, "%Y/%m/%d %H:%M:%S")
 
-    price_data = dynamic_data_compiler(start_time=start_date_str,
-                                   end_time=end_date_str,
-                                   table_name='DISPATCHPRICE',
-                                   raw_data_location=cache,
-                                   select_columns=['REGIONID', 'SETTLEMENTDATE', 'RRP'],
-                                   fformat='parquet',
-                                   keep_csv=False
-                                   )
-    price_data['DateTime'] = pd.to_datetime(price_data['SETTLEMENTDATE'])
-    price_data = price_data.drop(columns=['SETTLEMENTDATE'])
-    price_data = price_data.sort_values(by='DateTime')
-    price_data = price_data.set_index('DateTime', drop=True)
-    price_data = price_data.groupby("REGIONID").resample(
-        period, label='right', closed='right').mean(numeric_only=True).reset_index(level="REGIONID")
+    price_data = dynamic_data_compiler(
+        start_time=start_date_str,
+        end_time=end_date_str,
+        table_name="DISPATCHPRICE",
+        raw_data_location=cache,
+        select_columns=["REGIONID", "SETTLEMENTDATE", "RRP"],
+        fformat="parquet",
+        keep_csv=False,
+    )
+    price_data["DateTime"] = pd.to_datetime(price_data["SETTLEMENTDATE"])
+    price_data = price_data.drop(columns=["SETTLEMENTDATE"])
+    price_data = price_data.sort_values(by="DateTime")
+    price_data = price_data.set_index("DateTime", drop=True)
+    price_data = (
+        price_data.groupby("REGIONID")
+        .resample(period, label="right", closed="right")
+        .mean(numeric_only=True)
+        .reset_index(level="REGIONID")
+    )
     return price_data
 
 
@@ -345,6 +378,6 @@ def get_preprocessed_price_data(file, region):
      and columns named 'RRP' containing the price data ($/MWh).
     """
     price_data = pd.read_parquet(file)
-    price_data = price_data[price_data['REGIONID']==region].copy()
-    price_data = price_data.loc[:, ['RRP']]
+    price_data = price_data[price_data["REGIONID"] == region].copy()
+    price_data = price_data.loc[:, ["RRP"]]
     return price_data

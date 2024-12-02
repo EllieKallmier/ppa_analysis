@@ -27,7 +27,9 @@ The tools capability can be explored and utilised through [interface.ipynb](inte
 
 # Loading further NEM data
 
-The notebook [data_loading.ipynb](data_loading.ipynb)
+The notebook [data_loading.ipynb](data_loading.ipynb) allows users to load further years of NEM data through two tools developed by the Collaboration on Energy and Environmental Markets ([CEEM](https://www.ceem.unsw.edu.au)): 
+- [NEMOSIS](https://github.com/UNSW-CEEM/NEMOSIS), for fetching and formatting data from AEMO's MMS tables, and 
+- [NEMED](https://github.com/UNSW-CEEM/NEMED), for processing grid emissions data.
 
 # Bring your own load data
 
@@ -63,6 +65,8 @@ The [glossary](glossary.md) provides definitions of key terms including contract
 
 
 # Acknowledgements
+
+This tool was initially developed under the [RACE for 2030](https://racefor2030.com.au) project [24/7 TRUZERO](https://racefor2030.com.au/project/24-7-renewables-solutions-for-matching-tracking-and-enhancing-corporate-renewables-purchasing/), made possible by support from industry partners Enosi, AGL, Mirvac Ventures, Starling Energy Group and Buildings Alive.
 
 Much of the functionality and sections of this tool were based on the MSAT-PPA tool developed by Nick Gorman: 
 https://github.com/nick-gorman/MSAT-PPA-Python/tree/e9bef99ff914a826446f24697e983b16c23ced18

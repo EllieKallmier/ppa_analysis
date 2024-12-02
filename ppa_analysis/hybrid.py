@@ -13,21 +13,22 @@ type. Note these contract specific functions can also be used directly if desire
 performs the optimisation, and may be useful to the advanced user who want to implement a customised methodology.
 """
 
-import pandas as pd
 import numpy as np
-from mip import Model, xsum, minimize, OptimizationStatus, CONTINUOUS, CBC, GUROBI
-from ppa_analysis.helper_functions import *  # noqa: F403
+import pandas as pd
+from mip import CBC, CONTINUOUS, GUROBI, Model, OptimizationStatus, minimize, xsum
+
 from ppa_analysis import advanced_settings
+from ppa_analysis.helper_functions import *  # noqa: F403
 
 
 def run_hybrid_optimisation(
-        contracted_energy: pd.Series,
-        wholesale_prices: pd.Series,
-        generation_data: pd.DataFrame,
-        gen_costs: dict[str:float],
-        total_sum: float,
-        cfe_score_min: float = None,
-) -> tuple[pd.Series, dict[str:dict[str:float]]]:
+    contracted_energy: pd.Series,
+    wholesale_prices: pd.Series,
+    generation_data: pd.DataFrame,
+    gen_costs: dict[str:float],
+    total_sum: float,
+    cfe_score_min: float = None,
+) -> tuple[pd.Series, dict[str : dict[str:float]]]:
     """
     Calculates an optimal mix of volume to contract from a set of renewable energy generators.
 
@@ -93,15 +94,15 @@ def run_hybrid_optimisation(
         lcoe[str(_)] = gen_costs[gen]
 
     # Create the optimisation model and set up constants/variables:
-    R = range(len(contracted_energy))       # how many time intervals in total
-    G = range(len(generation_data.columns))         # how many columns of generators
+    R = range(len(contracted_energy))  # how many time intervals in total
+    G = range(len(generation_data.columns))  # how many columns of generators
 
-    if advanced_settings.solver == 'GUROBI':
+    if advanced_settings.solver == "GUROBI":
         solver = GUROBI
-    elif advanced_settings.solver == 'CBC':
+    elif advanced_settings.solver == "CBC":
         solver = CBC
     else:
-        raise ValueError(f'Solver name {advanced_settings.solver} not recognised.')
+        raise ValueError(f"Solver name {advanced_settings.solver} not recognised.")
 
     m = Model(solver_name=solver)
 
@@ -112,7 +113,9 @@ def run_hybrid_optimisation(
 
     # Define each of the key variables, all continuous, including lb==0.0 for all.
     # excess = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
-    unmatched = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub = contracted_energy.max()) for r in R]
+    unmatched = [
+        m.add_var(var_type=CONTINUOUS, lb=0.0, ub=contracted_energy.max()) for r in R
+    ]
     hybrid_gen_sum = [m.add_var(var_type=CONTINUOUS, lb=0.0) for r in R]
 
     # Penalties added to avoid inflexible constraints:
@@ -121,17 +124,30 @@ def run_hybrid_optimisation(
 
     # add the objective: to minimise firming (unmatched)
     m.objective = minimize(
-        xsum((unmatched[r] * wholesale_prices_vals[r] +
-              xsum(gen_data_series[str(g)][r] * percent_of_generation[str(g)] * lcoe[str(g)] for g in G))
-             for r in R)
+        xsum(
+            (
+                unmatched[r] * wholesale_prices_vals[r]
+                + xsum(
+                    gen_data_series[str(g)][r]
+                    * percent_of_generation[str(g)]
+                    * lcoe[str(g)]
+                    for g in G
+                )
+            )
+            for r in R
+        )
         + oversupply_flip_var * advanced_settings.OVERSUPPLY_PENALTY
         + unmatched_penalty * unmet_cfe_score
     )
 
     # Add to hybrid_gen_sum variable by adding together each generation trace by the percentage variable
     for r in R:
-        m += hybrid_gen_sum[r] <= sum([gen_data_series[str(g)][r] * percent_of_generation[str(g)] for g in G])
-        m += hybrid_gen_sum[r] >= sum([gen_data_series[str(g)][r] * percent_of_generation[str(g)] for g in G])
+        m += hybrid_gen_sum[r] <= sum(
+            [gen_data_series[str(g)][r] * percent_of_generation[str(g)] for g in G]
+        )
+        m += hybrid_gen_sum[r] >= sum(
+            [gen_data_series[str(g)][r] * percent_of_generation[str(g)] for g in G]
+        )
 
     for r in R:
         m += unmatched[r] >= contracted_energy[r] - hybrid_gen_sum[r]
@@ -146,69 +162,80 @@ def run_hybrid_optimisation(
     m += oversupply_flip_var >= xsum(hybrid_gen_sum[r] for r in R) - total_sum
 
     if cfe_score_min is not None:
-        m += unmet_cfe_score >= xsum(unmatched[r] for r in R) - (1 - cfe_score_min) * total_sum
-    
+        m += (
+            unmet_cfe_score
+            >= xsum(unmatched[r] for r in R) - (1 - cfe_score_min) * total_sum
+        )
+
     m.verbose = 0
     status = m.optimize()
 
     hybrid_trace = pd.DataFrame(generation_data)
-    hybrid_trace['Hybrid'] = 0
-    
+    hybrid_trace["Hybrid"] = 0
+
     # If the optimisation is infeasible: try again with different constraints based
-    # on the contract type. 
+    # on the contract type.
     # TODO: get rid of this recursion!!
     if status == OptimizationStatus.INFEASIBLE:
-        print('Infeasible problem under current constraints.')
+        print("Infeasible problem under current constraints.")
         m.clear()
-        return #    maybe need to raise an error here instead/as well? For user benefit?
+        return  #    maybe need to raise an error here instead/as well? For user benefit?
 
-        
-        
     # If the optimisation is solvable (and solved): create the new hybrid trace
     # by multiplying out each gen trace by the percentage variable
     if status == OptimizationStatus.OPTIMAL or status == OptimizationStatus.FEASIBLE:
-        for g in G:         
-            hybrid_trace['Hybrid'] += gen_data_series[str(g)] * percent_of_generation[str(g)].x
+        for g in G:
+            hybrid_trace["Hybrid"] += (
+                gen_data_series[str(g)] * percent_of_generation[str(g)].x
+            )
 
         results = {}
         for g in G:
             name = gen_names[str(g)]
             details = {
-                'Percent of generator output': percent_of_generation[str(g)].x*100,
-                'Percent of hybrid trace':
-                    sum(percent_of_generation[str(g)].x * gen_data_series[str(g)]) / sum(hybrid_trace['Hybrid']) * 100
+                "Percent of generator output": percent_of_generation[str(g)].x * 100,
+                "Percent of hybrid trace": sum(
+                    percent_of_generation[str(g)].x * gen_data_series[str(g)]
+                )
+                / sum(hybrid_trace["Hybrid"])
+                * 100,
             }
 
             results[name] = details
 
-        
         # Add some checks to make sure optimisation is running correctly.
         # Check here to see that the variables for 'unmatched' and 'excess' match
         # the actual values (to see that the contraints are working as expected).
         check_df = pd.DataFrame()
-        check_df['Contracted'] = contracted_energy.copy()
-        check_df['Hybrid Gen'] = hybrid_trace['Hybrid'].copy()
+        check_df["Contracted"] = contracted_energy.copy()
+        check_df["Hybrid Gen"] = hybrid_trace["Hybrid"].copy()
 
-        check_df['Unmatched'] = [unmatched[r].x for r in R]
-        check_df['Real Unmatched'] = (check_df['Contracted'] - check_df['Hybrid Gen']).clip(lower=0.0)
-        check_df['Check unmatched'] = (check_df['Real Unmatched'].round(2) == check_df['Unmatched'].round(2))
-        check_df = check_df[(check_df['Check unmatched'] == False)].copy()
+        check_df["Unmatched"] = [unmatched[r].x for r in R]
+        check_df["Real Unmatched"] = (
+            check_df["Contracted"] - check_df["Hybrid Gen"]
+        ).clip(lower=0.0)
+        check_df["Check unmatched"] = check_df["Real Unmatched"].round(2) == check_df[
+            "Unmatched"
+        ].round(2)
+        check_df = check_df[(check_df["Check unmatched"] == False)].copy()
 
-        assert check_df.empty == True, "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
+        assert (
+            check_df.empty == True
+        ), "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
 
         # clear the model at end of run so memory isn't overworked.
         m.clear()
 
-        return hybrid_trace['Hybrid'], results
-    
+        return hybrid_trace["Hybrid"], results
 
-# 
+
+#
 def hybrid_shaped(
-        contracted_amount:float, 
-        time_series_data:pd.DataFrame,
-        generator_info:dict[str:float],
-        redef_period:str,
-        percentile_val:float
+    contracted_amount: float,
+    time_series_data: pd.DataFrame,
+    generator_info: dict[str:float],
+    redef_period: str,
+    percentile_val: float,
 ) -> pd.DataFrame:
     """
     Calculates the optimal mix of volume to contract from a set of renewable energy generators for a 'Shaped' contract
@@ -259,79 +286,90 @@ def hybrid_shaped(
             }
         }
     """
-    
+
     if contracted_amount < 0 or contracted_amount > 100:
-        raise ValueError('contracted_amount must be a float between 0 - 100')
-    
+        raise ValueError("contracted_amount must be a float between 0 - 100")
+
     if percentile_val < 0 or percentile_val > 100:
-        raise ValueError('percentile_val must be a float between 0 - 100.')
-    
-    percentile_val = 1 - (percentile_val/100)
+        raise ValueError("percentile_val must be a float between 0 - 100.")
+
+    percentile_val = 1 - (percentile_val / 100)
 
     # also need to find out if it's a leap year:
     leap_year = check_leap_year(time_series_data)
-    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
+    first_year = time_series_data.iloc[: 24 * (365 + leap_year)].copy()
 
     # Get the load and gen:
-    first_year_load = first_year['Load'].copy()
+    first_year_load = first_year["Load"].copy()
     first_year_gen = first_year[generator_info.keys()].copy()
 
     # sum of total load in first year:
-    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (
+        contracted_amount / 100
+    )
 
     # Create a new df to hold the shaped (percentile) profiles, make sure timestamps
     # all line up.
     shaped_first_year = pd.DataFrame()
-    shaped_first_year['DateTime'] = pd.date_range(
-        first_year_load.index[0], 
-        first_year_load.index[-1], 
-        freq='H'
+    shaped_first_year["DateTime"] = pd.date_range(
+        first_year_load.index[0], first_year_load.index[-1], freq="H"
     )
 
     # Find the load profile percentile on the specified periodic basis (yearly, quarterly, or monthly).
-    resampled_gen_data = get_percentile_profile(redef_period, first_year_gen, percentile_val)
+    resampled_gen_data = get_percentile_profile(
+        redef_period, first_year_gen, percentile_val
+    )
     # Join the periodic percentile data with the full time series data such that each time interval has the
     # percentile value for it period.
-    shaped_first_year = concat_shaped_profiles(redef_period, resampled_gen_data, shaped_first_year)
+    shaped_first_year = concat_shaped_profiles(
+        redef_period, resampled_gen_data, shaped_first_year
+    )
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year_load,
-        wholesale_prices=first_year['RRP'].copy(),
+        wholesale_prices=first_year["RRP"].copy(),
         generation_data=shaped_first_year.copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
     )
 
-    hybrid_trace_whole_length = pd.DataFrame(columns=['DateTime'])
-    hybrid_trace_whole_length['DateTime'] = time_series_data.index.copy()
+    hybrid_trace_whole_length = pd.DataFrame(columns=["DateTime"])
+    hybrid_trace_whole_length["DateTime"] = time_series_data.index.copy()
 
     # Now add the hybrid P[x] profile to df as contracted energy
-    resampled_gen_data['Contracted Energy'] = 0
+    resampled_gen_data["Contracted Energy"] = 0
     for name, det_dict in percentages.items():
-        if name != 'Hybrid':
-            contracted_percent_gen = det_dict['Percent of generator output'] / 100
-            resampled_gen_data['Contracted Energy'] += resampled_gen_data[name] * (contracted_percent_gen)
-    
-    contracted_gen_full_length = concat_shaped_profiles(redef_period, resampled_gen_data, hybrid_trace_whole_length)
+        if name != "Hybrid":
+            contracted_percent_gen = det_dict["Percent of generator output"] / 100
+            resampled_gen_data["Contracted Energy"] += resampled_gen_data[name] * (
+                contracted_percent_gen
+            )
 
-    time_series_data = pd.concat([time_series_data, contracted_gen_full_length['Contracted Energy']], axis='columns')
+    contracted_gen_full_length = concat_shaped_profiles(
+        redef_period, resampled_gen_data, hybrid_trace_whole_length
+    )
+
+    time_series_data = pd.concat(
+        [time_series_data, contracted_gen_full_length["Contracted Energy"]],
+        axis="columns",
+    )
 
     # Now add the 'actual' hybrid profile (each gen * allocated output %)
-    time_series_data['Hybrid'] = 0
+    time_series_data["Hybrid"] = 0
 
     for name, det_dict in percentages.items():
-        hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
+        hybrid_percent_gen = det_dict["Percent of generator output"] / 100
+        time_series_data["Hybrid"] += time_series_data[name] * hybrid_percent_gen
 
     return time_series_data, percentages
 
 
 def hybrid_baseload(
-        contracted_amount:float, 
-        time_series_data:pd.DataFrame,
-        generator_info:dict[str:float],
-        redef_period:str,
-        percentile_val:float
+    contracted_amount: float,
+    time_series_data: pd.DataFrame,
+    generator_info: dict[str:float],
+    redef_period: str,
+    percentile_val: float,
 ) -> pd.DataFrame:
     """
     Calculates the optimal mix of volume to contract from a set of renewable energy generators for a 'Baseload' contract
@@ -380,45 +418,52 @@ def hybrid_baseload(
     """
 
     if contracted_amount < 0:
-        raise ValueError('contracted_amount must be greater than 0.')
-    
+        raise ValueError("contracted_amount must be greater than 0.")
+
     # also need to find out if it's a leap year:
     leap_year = check_leap_year(time_series_data)
-    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
+    first_year = time_series_data.iloc[: 24 * (365 + leap_year)].copy()
 
     # Resample to hourly load, then take the hourly average per chosen period
-    first_year_load = first_year['Load'].copy()
+    first_year_load = first_year["Load"].copy()
 
     # Use a map to allocate hourly values across all years of load data:
-    if redef_period == 'Y':
+    if redef_period == "Y":
         avg_hourly_load = first_year_load.mean(numeric_only=True)
 
         # the contracted energy needs to be updated by the contracted_amount percentage:
-        time_series_data['Contracted Energy'] = round(avg_hourly_load) * (contracted_amount / 100)
-    
+        time_series_data["Contracted Energy"] = round(avg_hourly_load) * (
+            contracted_amount / 100
+        )
+
     else:
         # the contracted energy needs to be updated by the contracted_amount percentage:
-        avg_hourly_load = pd.DataFrame(first_year_load.resample(redef_period).mean(numeric_only=True) * (contracted_amount / 100))
+        avg_hourly_load = pd.DataFrame(
+            first_year_load.resample(redef_period).mean(numeric_only=True)
+            * (contracted_amount / 100)
+        )
 
-        avg_hourly_load['Load'] = avg_hourly_load['Load']
-        avg_hourly_load['M'] = avg_hourly_load.index.month
-        avg_hourly_load['Q'] = avg_hourly_load.index.quarter
+        avg_hourly_load["Load"] = avg_hourly_load["Load"]
+        avg_hourly_load["M"] = avg_hourly_load.index.month
+        avg_hourly_load["Q"] = avg_hourly_load.index.quarter
 
-        map_dict = dict(zip(avg_hourly_load[redef_period], avg_hourly_load['Load']))
+        map_dict = dict(zip(avg_hourly_load[redef_period], avg_hourly_load["Load"]))
 
-        time_series_data['M'] = time_series_data.index.month
-        time_series_data['Q'] = time_series_data.index.quarter
+        time_series_data["M"] = time_series_data.index.month
+        time_series_data["Q"] = time_series_data.index.quarter
 
-        time_series_data['Contracted Energy'] = time_series_data[redef_period].copy()
-        time_series_data['Contracted Energy'] = time_series_data['Contracted Energy'].map(map_dict)
+        time_series_data["Contracted Energy"] = time_series_data[redef_period].copy()
+        time_series_data["Contracted Energy"] = time_series_data[
+            "Contracted Energy"
+        ].map(map_dict)
 
-        time_series_data = time_series_data.drop(columns=['M', 'Q'])
+        time_series_data = time_series_data.drop(columns=["M", "Q"])
 
-    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
-    
+    first_year = time_series_data.iloc[: 24 * (365 + leap_year)].copy()
+
     hybrid_trace_series, percentages = run_hybrid_optimisation(
-        contracted_energy=first_year['Contracted Energy'].copy(),
-        wholesale_prices=first_year['RRP'].copy(),
+        contracted_energy=first_year["Contracted Energy"].copy(),
+        wholesale_prices=first_year["RRP"].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load.sum(numeric_only=True),
@@ -426,23 +471,23 @@ def hybrid_baseload(
         # consider adding here a cfe_score_min to enfore a penalty on meeting the contracted trace...
     )
 
-    first_year = pd.concat([first_year, hybrid_trace_series], axis='columns')
+    first_year = pd.concat([first_year, hybrid_trace_series], axis="columns")
 
-    time_series_data['Hybrid'] = 0
+    time_series_data["Hybrid"] = 0
 
     for name, det_dict in percentages.items():
-        hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
+        hybrid_percent_gen = det_dict["Percent of generator output"] / 100
+        time_series_data["Hybrid"] += time_series_data[name] * hybrid_percent_gen
 
     return time_series_data, percentages
 
 
 def hybrid_247(
-        contracted_amount:float, 
-        time_series_data:pd.DataFrame,
-        generator_info:dict[str:float],
-        redef_period:str,
-        percentile_val:float
+    contracted_amount: float,
+    time_series_data: pd.DataFrame,
+    generator_info: dict[str:float],
+    redef_period: str,
+    percentile_val: float,
 ) -> pd.DataFrame:
     """
     Calculates the optimal mix of volume to contract from a set of renewable energy generators for a '24/7' contract
@@ -488,42 +533,42 @@ def hybrid_247(
     """
 
     if contracted_amount < 0 or contracted_amount > 100:
-        raise ValueError('contracted_amount must be a float between 0-100')
+        raise ValueError("contracted_amount must be a float between 0-100")
 
     # also need to find out if it's a leap year:
     leap_year = check_leap_year(time_series_data)
-    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
+    first_year = time_series_data.iloc[: 24 * (365 + leap_year)].copy()
 
     # Get first year load (and total sum):
-    first_year_load = first_year['Load'].copy()
+    first_year_load = first_year["Load"].copy()
     first_year_load_sum = first_year_load.sum(numeric_only=True)
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
-        contracted_energy=first_year['Load'].copy(),
-        wholesale_prices=first_year['RRP'].copy(),
+        contracted_energy=first_year["Load"].copy(),
+        wholesale_prices=first_year["RRP"].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
-        cfe_score_min=contracted_amount/100
+        cfe_score_min=contracted_amount / 100,
     )
 
-    time_series_data['Hybrid'] = 0
+    time_series_data["Hybrid"] = 0
 
     for name, det_dict in percentages.items():
-        hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
+        hybrid_percent_gen = det_dict["Percent of generator output"] / 100
+        time_series_data["Hybrid"] += time_series_data[name] * hybrid_percent_gen
 
-    time_series_data['Contracted Energy'] = time_series_data['Hybrid'].copy()
+    time_series_data["Contracted Energy"] = time_series_data["Hybrid"].copy()
 
     return time_series_data, percentages
 
 
 def hybrid_pap(
-        contracted_amount:float,
-        time_series_data:pd.DataFrame,
-        generator_info:dict[str:float],
-        redef_period:str,
-        percentile_val:float
+    contracted_amount: float,
+    time_series_data: pd.DataFrame,
+    generator_info: dict[str:float],
+    redef_period: str,
+    percentile_val: float,
 ) -> pd.DataFrame:
     """
     Calculates the optimal mix of volume to contract from a set of renewable energy generators for a 'Pay as
@@ -570,46 +615,48 @@ def hybrid_pap(
     """
 
     if contracted_amount < 0:
-        raise ValueError('contracted_amount must be greater than 0.')
+        raise ValueError("contracted_amount must be greater than 0.")
 
     # also need to find out if it's a leap year:
     leap_year = check_leap_year(time_series_data)
-    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
+    first_year = time_series_data.iloc[: 24 * (365 + leap_year)].copy()
 
     # Get first year load (and total sum):
-    first_year_load = first_year['Load'].copy()
-    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+    first_year_load = first_year["Load"].copy()
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (
+        contracted_amount / 100
+    )
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
         contracted_energy=first_year_load,
-        wholesale_prices=first_year['RRP'].copy(),
+        wholesale_prices=first_year["RRP"].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
     )
 
-    time_series_data['Hybrid'] = 0
+    time_series_data["Hybrid"] = 0
 
     for name, det_dict in percentages.items():
-        hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
-  
-    time_series_data['Contracted Energy'] = time_series_data['Hybrid'].copy()
-    
+        hybrid_percent_gen = det_dict["Percent of generator output"] / 100
+        time_series_data["Hybrid"] += time_series_data[name] * hybrid_percent_gen
+
+    time_series_data["Contracted Energy"] = time_series_data["Hybrid"].copy()
+
     return time_series_data, percentages
 
 
 def hybrid_pac(
-        contracted_amount: float,
-        time_series_data: pd.DataFrame,
-        generator_info: dict[str:float],
-        redef_period: str,
-        percentile_val: float
+    contracted_amount: float,
+    time_series_data: pd.DataFrame,
+    generator_info: dict[str:float],
+    redef_period: str,
+    percentile_val: float,
 ) -> pd.DataFrame:
     """
-    Calculates the optimal mix of volume to contract from a set of renewable energy generators for a 'Pay as 
+    Calculates the optimal mix of volume to contract from a set of renewable energy generators for a 'Pay as
     Consumed' contract type.
-    
+
     Calls hybrid.run_hybrid_optimisation to perform the optimisation with specific settings for the 'Pay as Consumed'
     contract. When calling run_hybrid_optimisation:
         - the contracted_energy parameter is set to the load profile (not adjusted by the contracted_amount parameter)
@@ -650,43 +697,47 @@ def hybrid_pac(
     """
 
     if contracted_amount < 0:
-        raise ValueError('contracted_amount must be greater than 0.')
+        raise ValueError("contracted_amount must be greater than 0.")
 
     # Use only the first year of data to create the hybrid/contracted energy trace
     # also need to find out if it's a leap year:
     leap_year = check_leap_year(time_series_data)
-    first_year = time_series_data.iloc[:24 * (365 + leap_year)].copy()
+    first_year = time_series_data.iloc[: 24 * (365 + leap_year)].copy()
 
     # Get first year load (and total sum):
-    first_year_load = first_year['Load'].copy()
-    first_year_load_sum = first_year_load.sum(numeric_only=True) * (contracted_amount/100)
+    first_year_load = first_year["Load"].copy()
+    first_year_load_sum = first_year_load.sum(numeric_only=True) * (
+        contracted_amount / 100
+    )
 
     hybrid_trace_series, percentages = run_hybrid_optimisation(
-        contracted_energy=first_year['Load'].copy(),
-        wholesale_prices=first_year['RRP'].copy(),
+        contracted_energy=first_year["Load"].copy(),
+        wholesale_prices=first_year["RRP"].copy(),
         generation_data=first_year[generator_info.keys()].copy(),
         gen_costs=generator_info,
         total_sum=first_year_load_sum,
     )
 
-    time_series_data['Hybrid'] = 0
+    time_series_data["Hybrid"] = 0
 
     for name, det_dict in percentages.items():
-        hybrid_percent_gen = det_dict['Percent of generator output'] / 100
-        time_series_data['Hybrid'] += time_series_data[name] * hybrid_percent_gen
-    
-    time_series_data['Contracted Energy'] = np.minimum(time_series_data['Load'], time_series_data['Hybrid'])
+        hybrid_percent_gen = det_dict["Percent of generator output"] / 100
+        time_series_data["Hybrid"] += time_series_data[name] * hybrid_percent_gen
+
+    time_series_data["Contracted Energy"] = np.minimum(
+        time_series_data["Load"], time_series_data["Hybrid"]
+    )
 
     return time_series_data, percentages
 
 
 def create_hybrid_generation(
-        contract_type:str,
-        contracted_amount:float,
-        time_series_data:pd.DataFrame,
-        generator_info:dict[str:float],
-        redef_period:str = None,
-        percentile_val:float = None
+    contract_type: str,
+    contracted_amount: float,
+    time_series_data: pd.DataFrame,
+    generator_info: dict[str:float],
+    redef_period: str = None,
+    percentile_val: float = None,
 ) -> pd.DataFrame:
     """
     Calculates the optimal mix of volume to contract from a set of renewable energy generators for a given contract
@@ -733,24 +784,35 @@ def create_hybrid_generation(
             }
         }
     """
-    
-    valid_contracts = {'Pay as Produced', 'Pay as Consumed', 'Shaped', 'Baseload', '24/7'}
+
+    valid_contracts = {
+        "Pay as Produced",
+        "Pay as Consumed",
+        "Shaped",
+        "Baseload",
+        "24/7",
+    }
     if contract_type not in valid_contracts:
-        raise ValueError(f'contract_type must be one of {valid_contracts}')
-    
-    valid_periods = {'M', 'Q', 'Y'}
-    if redef_period not in valid_periods and contract_type in ['Shaped', 'Baseload']:
-        raise ValueError(f'redef_period must be one of {valid_periods}')
+        raise ValueError(f"contract_type must be one of {valid_contracts}")
+
+    valid_periods = {"M", "Q", "Y"}
+    if redef_period not in valid_periods and contract_type in ["Shaped", "Baseload"]:
+        raise ValueError(f"redef_period must be one of {valid_periods}")
 
     opt_hybrid_funcs = {
-        'Pay as Produced' : hybrid_pap, 
-        'Pay as Consumed' : hybrid_pac,
-        'Shaped' : hybrid_shaped, 
-        'Baseload' : hybrid_baseload, 
-        '24/7' : hybrid_247
+        "Pay as Produced": hybrid_pap,
+        "Pay as Consumed": hybrid_pac,
+        "Shaped": hybrid_shaped,
+        "Baseload": hybrid_baseload,
+        "24/7": hybrid_247,
     }
 
     df_with_hybrid = opt_hybrid_funcs[contract_type](
-        contracted_amount, time_series_data, generator_info, redef_period, percentile_val)
+        contracted_amount,
+        time_series_data,
+        generator_info,
+        redef_period,
+        percentile_val,
+    )
 
     return df_with_hybrid

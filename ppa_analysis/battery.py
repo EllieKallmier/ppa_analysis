@@ -1,16 +1,25 @@
-import pandas as pd
 import numpy as np
-from mip import Model, xsum, minimize, CONTINUOUS, BINARY, OptimizationStatus, CBC, GUROBI
+import pandas as pd
+from mip import (
+    BINARY,
+    CBC,
+    CONTINUOUS,
+    GUROBI,
+    Model,
+    OptimizationStatus,
+    minimize,
+    xsum,
+)
 
 from ppa_analysis import advanced_settings
 
 
 def run_battery_optimisation(
-        timeseries_data:pd.DataFrame,
-        rated_power_capacity:float,
-        size_in_mwh:float,
-        charging_efficiency:float=0.9,
-        discharging_efficiency:float=0.88
+    timeseries_data: pd.DataFrame,
+    rated_power_capacity: float,
+    size_in_mwh: float,
+    charging_efficiency: float = 0.9,
+    discharging_efficiency: float = 0.88,
 ) -> pd.DataFrame:
     """
     Optimises battery dispatch to minimise cost of purchasing energy not covered by a PPA at the wholesale spot price.
@@ -35,49 +44,72 @@ def run_battery_optimisation(
     :return: pd.DataFrame, the timeseries data supplied with an additional column 'Load with battery' specifying the
         load after adding the battery charging and discharging.
     """
-    
+
     # Get the useful traces first - it depends a bit on the order of operations
     # but the load to be used here will either just be 'Load' or 'Shifted load' ??
-    wholesale_prices = timeseries_data['RRP'].clip(lower=1.0).values
-    excess_load = np.maximum(timeseries_data['Load'] -
-                             timeseries_data['Contracted Energy'], 0).values
-    excess_gen = np.maximum(timeseries_data['Contracted Energy'] -
-                            timeseries_data['Load'], 0).values
+    wholesale_prices = timeseries_data["RRP"].clip(lower=1.0).values
+    excess_load = np.maximum(
+        timeseries_data["Load"] - timeseries_data["Contracted Energy"], 0
+    ).values
+    excess_gen = np.maximum(
+        timeseries_data["Contracted Energy"] - timeseries_data["Load"], 0
+    ).values
 
     min_soe = size_in_mwh * advanced_settings.MIN_SOC
     max_soe = size_in_mwh * advanced_settings.MAX_SOC
 
-    if advanced_settings.solver == 'GUROBI':
+    if advanced_settings.solver == "GUROBI":
         solver = GUROBI
-    elif advanced_settings.solver == 'CBC':
+    elif advanced_settings.solver == "CBC":
         solver = CBC
     else:
-        raise ValueError(f'Solver name {advanced_settings.solver} not recognised.')
+        raise ValueError(f"Solver name {advanced_settings.solver} not recognised.")
 
     m = Model(solver_name=solver)
 
     len_timeseries = range(len(excess_load))
 
-    battery_discharge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in len_timeseries]
-    battery_charge = [m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity) for i in len_timeseries]
-    soe = [m.add_var(var_type=CONTINUOUS, lb=min_soe, ub=max_soe) for i in len_timeseries]
+    battery_discharge = [
+        m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity)
+        for i in len_timeseries
+    ]
+    battery_charge = [
+        m.add_var(var_type=CONTINUOUS, lb=0.0, ub=rated_power_capacity)
+        for i in len_timeseries
+    ]
+    soe = [
+        m.add_var(var_type=CONTINUOUS, lb=min_soe, ub=max_soe) for i in len_timeseries
+    ]
 
     # Binary coefficients to disallow charging/discharging simultaneously
     charge_coef = [m.add_var(var_type=BINARY) for i in len_timeseries]
     discharge_coef = [m.add_var(var_type=BINARY) for i in len_timeseries]
 
     # Initial simple objective: minimise cost of firming - firming = excess load - battery discharge
-    m.objective = minimize(xsum((excess_load[i] - battery_discharge[i]) * (wholesale_prices[i]) for i in len_timeseries))
+    m.objective = minimize(
+        xsum(
+            (excess_load[i] - battery_discharge[i]) * (wholesale_prices[i])
+            for i in len_timeseries
+        )
+    )
 
     # TODO: if needed, update to take into account the time interval (to convert from energy to power or vice versa)
 
     # Define soe as previous soe + battery charge (*efficiency) - battery discharge (*efficiency)
     for i in range(1, len(excess_load)):
-        m += soe[i] <= soe[i-1] + charging_efficiency*battery_charge[i-1] - \
-            (1/discharging_efficiency)*battery_discharge[i-1]
-        
-        m += soe[i] >= soe[i-1] + charging_efficiency*battery_charge[i-1] - \
-            (1/discharging_efficiency)*battery_discharge[i-1]
+        m += (
+            soe[i]
+            <= soe[i - 1]
+            + charging_efficiency * battery_charge[i - 1]
+            - (1 / discharging_efficiency) * battery_discharge[i - 1]
+        )
+
+        m += (
+            soe[i]
+            >= soe[i - 1]
+            + charging_efficiency * battery_charge[i - 1]
+            - (1 / discharging_efficiency) * battery_discharge[i - 1]
+        )
 
     # Set the initial state of energy to half battery size:
     m += soe[0] <= size_in_mwh * 0.5
@@ -88,15 +120,15 @@ def run_battery_optimisation(
     for i in len_timeseries:
         m += battery_charge[i] <= excess_gen[i]
         m += battery_discharge[i] <= excess_load[i]
-        m += charge_coef[i] + discharge_coef[i] <= 1 
-        m += battery_charge[i] <= charge_coef[i] * rated_power_capacity 
+        m += charge_coef[i] + discharge_coef[i] <= 1
+        m += battery_charge[i] <= charge_coef[i] * rated_power_capacity
         m += battery_discharge[i] <= discharge_coef[i] * rated_power_capacity
 
     m.verbose = 0
     status = m.optimize()
 
     if status == OptimizationStatus.INFEASIBLE:
-        print('This battery optimisation was infeasible.')
+        print("This battery optimisation was infeasible.")
         m.clear()
         return timeseries_data
 
@@ -109,16 +141,17 @@ def run_battery_optimisation(
         discharge_coef_result = [discharge_coef[i].x for i in len_timeseries]
 
         battery_data = timeseries_data.copy()
-        battery_data['Discharge'] = battery_discharge_result
-        battery_data['Charge'] = battery_charge_result
-        battery_data['SoE'] = soe_result
-        battery_data['P_c'] = charge_coef_result
-        battery_data['P_d'] = discharge_coef_result
+        battery_data["Discharge"] = battery_discharge_result
+        battery_data["Charge"] = battery_charge_result
+        battery_data["SoE"] = soe_result
+        battery_data["P_c"] = charge_coef_result
+        battery_data["P_d"] = discharge_coef_result
 
-        battery_data['Load with battery'] = battery_data['Load'] + \
-            battery_data['Charge'] - battery_data['Discharge']
-        
-        timeseries_data['Load with battery'] = battery_data['Load with battery'].copy()
+        battery_data["Load with battery"] = (
+            battery_data["Load"] + battery_data["Charge"] - battery_data["Discharge"]
+        )
+
+        timeseries_data["Load with battery"] = battery_data["Load with battery"].copy()
 
         m.clear()
 

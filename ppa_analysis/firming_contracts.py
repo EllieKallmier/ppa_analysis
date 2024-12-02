@@ -1,6 +1,6 @@
 import pandas as pd
 
-# Define options for different firming contracts: 
+# Define options for different firming contracts:
 
 # 1. Wholesale exposure: fully risk exposed, no retail contract
 # 2. Partial wholesale exposure (cap, swap or collar)
@@ -11,31 +11,30 @@ import pandas as pd
 
 # Total wholesale exposure:
 def total_wholesale_exposure(
-        df:pd.DataFrame,
+    df: pd.DataFrame,
 ) -> pd.DataFrame:
-    df['Firming price'] = df['RRP'].copy()
+    df["Firming price"] = df["RRP"].copy()
     return df
 
 
 # Partial wholesale exposure:
 def part_wholesale_exposure(
-        df:pd.DataFrame,
-        upper_bound:float,
-        lower_bound:float,
+    df: pd.DataFrame,
+    upper_bound: float,
+    lower_bound: float,
 ) -> pd.DataFrame:
-    df['Firming price'] = df['RRP'].copy().clip(upper=upper_bound, lower=lower_bound)
+    df["Firming price"] = df["RRP"].copy().clip(upper=upper_bound, lower=lower_bound)
     return df
 
 
 # straight from sunspot bill calculator function...
 # but renamed variables for clarity, changed return
-# and slightly altered functionality (now fills in a column 'Firming' at the 
+# and slightly altered functionality (now fills in a column 'Firming' at the
 # chosen/specified times with the tariff rate corresponding).
 def tariff_firming_col_fill(
-        load_and_gen_data:pd.DataFrame, 
-        tariff_component_details:dict
+    load_and_gen_data: pd.DataFrame, tariff_component_details: dict
 ) -> pd.DatetimeIndex:
-    """ 
+    """
     For a component of a TOU tariff, adds that component's value (or rate) in $/MWh
     to the rows corresponding to times in which that component applies.
 
@@ -57,61 +56,77 @@ def tariff_firming_col_fill(
     """
     load_and_gen_data = load_and_gen_data.copy()
     data_at_tariff_selected_intervals = pd.DataFrame()
-    for label, time_value, in tariff_component_details['TimeIntervals'].items():
-        if time_value[0][0:2] == '24':
+    for (
+        label,
+        time_value,
+    ) in tariff_component_details["TimeIntervals"].items():
+        if time_value[0][0:2] == "24":
             time_value[0] = time_value[1].replace("24", "00")
-        if time_value[1][0:2] == '24':
+        if time_value[1][0:2] == "24":
             time_value[1] = time_value[1].replace("24", "00")
         if time_value[0] != time_value[1]:
-            data_between_times = load_and_gen_data.between_time(start_time=time_value[0], end_time=time_value[1],
-                                                            include_start=False, include_end=True)
+            data_between_times = load_and_gen_data.between_time(
+                start_time=time_value[0],
+                end_time=time_value[1],
+                include_start=False,
+                include_end=True,
+            )
         else:
             data_between_times = load_and_gen_data.copy()
 
-        if not tariff_component_details['Weekday']:
-            data_between_times = data_between_times.loc[data_between_times.index.weekday >= 5].copy()
+        if not tariff_component_details["Weekday"]:
+            data_between_times = data_between_times.loc[
+                data_between_times.index.weekday >= 5
+            ].copy()
 
-        if not tariff_component_details['Weekend']:
-            data_between_times = data_between_times.loc[data_between_times.index.weekday < 5].copy()
+        if not tariff_component_details["Weekend"]:
+            data_between_times = data_between_times.loc[
+                data_between_times.index.weekday < 5
+            ].copy()
 
-        data_between_times = data_between_times.loc[data_between_times.index.month.isin(tariff_component_details['Month']), :].copy()
+        data_between_times = data_between_times.loc[
+            data_between_times.index.month.isin(tariff_component_details["Month"]), :
+        ].copy()
 
-        data_at_tariff_selected_intervals = pd.concat([data_at_tariff_selected_intervals, data_between_times])
-    
+        data_at_tariff_selected_intervals = pd.concat(
+            [data_at_tariff_selected_intervals, data_between_times]
+        )
+
     index_for_selected_times = data_at_tariff_selected_intervals.index
-    load_and_gen_data.loc[index_for_selected_times, 'Firming price'] += tariff_component_details['Value'] * 1000
+    load_and_gen_data.loc[index_for_selected_times, "Firming price"] += (
+        tariff_component_details["Value"] * 1000
+    )
 
     return load_and_gen_data
 
 
 # Retail tariff contract:
-def retail_tariff_contract(
-        df:pd.DataFrame,
-        tariff_details:dict
-) -> pd.DataFrame:
+def retail_tariff_contract(df: pd.DataFrame, tariff_details: dict) -> pd.DataFrame:
     df_with_firming = df.copy()
-    df_with_firming['Firming price'] = 0
+    df_with_firming["Firming price"] = 0
 
-    for component_name, info in tariff_details['Parameters']['NUOS'].items():
-        if 'FlatRate' in component_name:
-            df_with_firming['Firming price'] += info['Value'] * 1000
-        if 'TOU' in component_name:
+    for component_name, info in tariff_details["Parameters"]["NUOS"].items():
+        if "FlatRate" in component_name:
+            df_with_firming["Firming price"] += info["Value"] * 1000
+        if "TOU" in component_name:
             for tou_component, tou_info in info.items():
                 df_with_firming = tariff_firming_col_fill(df_with_firming, tou_info)
 
-    if len(df_with_firming[df_with_firming['Firming price']==0]) == len(df_with_firming):
-        df_with_firming['Firming price'] = df_with_firming[f'RRP'].copy()
+    if len(df_with_firming[df_with_firming["Firming price"] == 0]) == len(
+        df_with_firming
+    ):
+        df_with_firming["Firming price"] = df_with_firming[f"RRP"].copy()
 
     return df_with_firming
 
 
 # Function to choose which firming contract to apply:
 def choose_firming_type(
-        firming_type:str,
-        time_series_data:pd.DataFrame,
-        upper_bound:float=None,
-        lower_bound:float=None,
-        tariff_details:dict[str:float]=None
+    firming_type: str,
+    time_series_data: pd.DataFrame,
+    upper_bound: float = None,
+    lower_bound: float = None,
+    tariff_details: dict[str:float] = None,
 ) -> pd.DataFrame:
     """
     Creates new column named "Firming price" in the time series DataFrame provided, which specifies the time varying
@@ -137,15 +152,17 @@ def choose_firming_type(
         purchasing energy not met by the PPA.
     """
 
-    valid_options = ['Wholesale exposed', 'Partially wholesale exposed', 'Retail']
+    valid_options = ["Wholesale exposed", "Partially wholesale exposed", "Retail"]
 
-    if firming_type == 'Wholesale exposed':
+    if firming_type == "Wholesale exposed":
         firming_cost = total_wholesale_exposure(time_series_data)
-    elif firming_type == 'Partially wholesale exposed':
-        firming_cost = part_wholesale_exposure(time_series_data, upper_bound, lower_bound)
-    elif firming_type == 'Retail':
+    elif firming_type == "Partially wholesale exposed":
+        firming_cost = part_wholesale_exposure(
+            time_series_data, upper_bound, lower_bound
+        )
+    elif firming_type == "Retail":
         firming_cost = retail_tariff_contract(time_series_data, tariff_details)
     else:
-        raise ValueError(f'firming_type must be one of {valid_options}')
+        raise ValueError(f"firming_type must be one of {valid_options}")
 
     return firming_cost.copy()
