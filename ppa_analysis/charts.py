@@ -146,7 +146,7 @@ def plot_emissions_bw(
     for col in emissions_measure.columns:
         if "Load" in col:
             emissions_measure[f"Unmatched Energy - {col}"] = (
-                emissions_measure["Load"]
+                emissions_measure[col]
                 - np.minimum(
                     emissions_measure["Hybrid"], emissions_measure["Contracted Energy"]
                 )

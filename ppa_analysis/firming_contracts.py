@@ -11,20 +11,39 @@ import pandas as pd
 
 # Total wholesale exposure:
 def total_wholesale_exposure(
-    df: pd.DataFrame,
+    load_and_gen_data: pd.DataFrame,
 ) -> pd.DataFrame:
-    df["Firming price"] = df["RRP"].copy()
-    return df
+    """
+    Adds a column to existing dataframe containing wholesale prices for the corresponding indexes.
+
+    :param load_and_gen_data: Dataframe with datetime index, and at least a column named
+        'Firming' that is either filled with zeroes or partially filled with tariff rates.
+    :return: load_and_gen_data with additional column named 'Firming price' filled
+        with relevant price data in $/MWh.
+    """
+    load_and_gen_data["Firming price"] = load_and_gen_data["RRP"].copy()
+    return load_and_gen_data
 
 
 # Partial wholesale exposure:
 def part_wholesale_exposure(
-    df: pd.DataFrame,
+    load_and_gen_data: pd.DataFrame,
     upper_bound: float,
     lower_bound: float,
 ) -> pd.DataFrame:
-    df["Firming price"] = df["RRP"].copy().clip(upper=upper_bound, lower=lower_bound)
-    return df
+    """
+    Adds a column to existing dataframe containing wholesale prices for the corresponding indexes,
+    clipped by an input upper and lower bound.
+
+    :param load_and_gen_data: Dataframe with datetime index, and at least a column named
+        'Firming' that is either filled with zeroes or partially filled with tariff rates.
+    :return: load_and_gen_data with additional column named 'Firming price' filled
+        with relevant price data in $/MWh.
+    """
+    load_and_gen_data["Firming price"] = (
+        load_and_gen_data["RRP"].copy().clip(upper=upper_bound, lower=lower_bound)
+    )
+    return load_and_gen_data
 
 
 # straight from sunspot bill calculator function...
@@ -38,7 +57,8 @@ def tariff_firming_col_fill(
     For a component of a TOU tariff, adds that component's value (or rate) in $/MWh
     to the rows corresponding to times in which that component applies.
 
-    :param load_and_gen_data: Dataframe with datetime index, and at least a column named 'Firming' that is either filled with zeroes or partially filled with tariff rates.
+    :param load_and_gen_data: Dataframe with datetime index, and at least a column named
+        'Firming' that is either filled with zeroes or partially filled with tariff rates.
     :param tariff_component_details: a dictionary with the following structure:
             tariff_component_details = {
                 "Month": [1, 2, 12],        # list of integers representing months
@@ -53,6 +73,9 @@ def tariff_firming_col_fill(
                 "Weekday": bool,
                 "Weekend": bool
             }
+    :return: load_and_gen_data with additional column named 'Firming price' filled
+        with relevant price data in $/MWh only for the specified tariff component
+        (time and value).
     """
     load_and_gen_data = load_and_gen_data.copy()
     data_at_tariff_selected_intervals = pd.DataFrame()
@@ -101,8 +124,33 @@ def tariff_firming_col_fill(
 
 
 # Retail tariff contract:
-def retail_tariff_contract(df: pd.DataFrame, tariff_details: dict) -> pd.DataFrame:
-    df_with_firming = df.copy()
+def retail_tariff_contract(
+    load_and_gen_data: pd.DataFrame, tariff_details: dict
+) -> pd.DataFrame:
+    """
+    Wrapper function to limit calls to tariff_firming_col_fill() as necessary, and
+    otherwise fill in 'Firming price' column with relevant price data in $/MWh.
+
+    :param load_and_gen_data: Dataframe with datetime index, and at least a column named
+        'Firming' that is either filled with zeroes or partially filled with tariff rates.
+    :param tariff_component_details: a dictionary with the following structure:
+            tariff_component_details = {
+                "Month": [1, 2, 12],        # list of integers representing months
+                "TimeIntervals": {
+                    "T1": [
+                    start_time (string),
+                    end_time (string)
+                    ]
+                },
+                "Unit": "$/kWh",
+                "Value": float,
+                "Weekday": bool,
+                "Weekend": bool
+            }
+    :return: load_and_gen_data with additional column named 'Firming price' filled
+        with relevant price data in $/MWh.
+    """
+    df_with_firming = load_and_gen_data.copy()
     df_with_firming["Firming price"] = 0
 
     for component_name, info in tariff_details["Parameters"]["NUOS"].items():
@@ -115,7 +163,7 @@ def retail_tariff_contract(df: pd.DataFrame, tariff_details: dict) -> pd.DataFra
     if len(df_with_firming[df_with_firming["Firming price"] == 0]) == len(
         df_with_firming
     ):
-        df_with_firming["Firming price"] = df_with_firming[f"RRP"].copy()
+        df_with_firming["Firming price"] = df_with_firming["RRP"].copy()
 
     return df_with_firming
 
