@@ -28,4 +28,9 @@ dev = [
     "jupyterlab==4.2.0",
     "notebook==7.2.0",
     "qtconsole==5.5.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.0.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

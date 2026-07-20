@@ -6,11 +6,12 @@ env/
 *results/
 *script_for_flex.py
 *flow_notebook.ipynb
-scratch.py
-scratch/
-archive/
+archive/*
 /data/
 notes/
+
+# Claude/code helper specific:
+CLAUDE.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
