@@ -257,7 +257,7 @@ def yearly_indexation(
     The function takes a dataframe with an index of type datetime and returns the same dataframe with an additional
     column named 'Strike Price (Indexed)'. For each year after the initial year in the index, the strike price is
     increased by the specified indexation rate. If the indexation rate is provided as a float then the same rate is
-    used for all years. If a list is then each year uses the next indexation rate in the list and if there are more
+    used for all years. If a list is given then each year uses the next indexation rate in the list and if there are more
     years than rates in the list then last rate is reused.
 
     :param df: with datetime index
@@ -281,8 +281,6 @@ def yearly_indexation(
     for i, year in enumerate(years):
         spi_map[year] = strike_price
         strike_price += strike_price * indexation[i] / 100
-
-    spi_map[year] = strike_price
 
     df_with_strike_price = df.copy()
 
@@ -329,8 +327,6 @@ def quarterly_indexation(
     for i, quarter in enumerate(quarters):
         spi_map[quarter] = strike_price
         strike_price += strike_price * indexation[i] / 100
-
-    spi_map[quarter] = strike_price
 
     df_with_strike_price = df.copy()
 
