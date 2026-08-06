@@ -1,8 +1,12 @@
 import pandas as pd
+import pytest
 
 from ppa_analysis.bill_calc import (
+    calculate_excess_electricity,
     calculate_firming,
+    calculate_lgcs,
     calculate_ppa,
+    calculate_shortfall,
     calculate_tariff_bill,
 )
 
@@ -286,3 +290,268 @@ def test_calculate_ppa_quarterly_indexation_dispatch(csv_str_to_df):
         ),
     )
     pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_excess_electricity_wholesale_price(csv_str_to_df):
+    # Two separate days so each row's clipping behaviour can be checked in isolation:
+    # day 1 has contracted energy above load (excess), day 2 has load above contracted
+    # (no excess -- Excess Energy clips to 0 rather than going negative).
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,  Contracted Energy,  RRP
+        2026-01-01 00:00,   50.0,  80.0,                40.0
+        2026-01-02 00:00,   90.0,  80.0,                40.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_excess_electricity(
+        df, settlement_period="D", excess_price="Wholesale"
+    )
+
+    # Day 1: Excess = max(80-50, 0) = 30 -> Revenue = 30 * RRP(40) = 1200
+    # Day 2: Excess = max(80-90, 0) = 0 -> Revenue = 0
+    expected = pd.DataFrame(
+        {
+            "Load": [50.0, 90.0],
+            "Contracted Energy": [80.0, 80.0],
+            "RRP": [40.0, 40.0],
+            "Excess Price": [40.0, 40.0],
+            "Excess Energy": [30.0, 0.0],
+            "Excess Energy Revenue": [1200.0, 0.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-01", "2026-01-02"], name="DateTime", freq="D"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_excess_electricity_fixed_price(csv_str_to_df):
+    # No 'RRP' column here at all - the fixed-price branch doesn't touch it, unlike the
+    # 'Wholesale' branch above.
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,  Contracted Energy
+        2026-01-01 00:00,   50.0,  80.0
+        2026-01-02 00:00,   90.0,  80.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_excess_electricity(df, settlement_period="D", excess_price=25.0)
+
+    # Day 1: Excess = 30 -> Revenue = 30 * 25 = 750
+    # Day 2: Excess = 0 -> Revenue = 0
+    expected = pd.DataFrame(
+        {
+            "Load": [50.0, 90.0],
+            "Contracted Energy": [80.0, 80.0],
+            "Excess Price": [25.0, 25.0],
+            "Excess Energy": [30.0, 0.0],
+            "Excess Energy Revenue": [750.0, 0.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-01", "2026-01-02"], name="DateTime", freq="D"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_excess_electricity_invalid_price_string_raises(csv_str_to_df):
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,  Contracted Energy
+        2026-01-01 00:00,   50.0,  80.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    with pytest.raises(ValueError, match='"Wholesale" or a float'):
+        calculate_excess_electricity(df, settlement_period="D", excess_price="Fixed")
+
+
+def test_calculate_shortfall_pay_as_produced_or_consumed(csv_str_to_df):
+    # 'Pay as Produced' and 'Pay as Consumed' share this branch (both differ only in how
+    # 'Contracted Energy' was derived upstream)
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   Contracted Energy
+        2026-01-01 00:00,   100.0,  70.0
+        2026-02-01 00:00,   100.0,  90.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_shortfall(
+        df,
+        settlement_period="M",
+        contract_type="Pay as Produced",
+        shortfall_penalty=50.0,
+        guaranteed_percent=80.0,
+    )
+
+    # Jan: Guaranteed = 100*0.8 = 80 -> Shortfall = max(80-70, 0) * 50 = 500
+    # Feb: Guaranteed = 80 -> Shortfall = max(80-90, 0) * 50 = 0
+    expected = pd.DataFrame(
+        {
+            "Load": [100.0, 100.0],
+            "Contracted Energy": [70.0, 90.0],
+            "Guaranteed Energy": [80.0, 80.0],
+            "Shortfall": [500.0, 0.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-31", "2026-02-28"], name="DateTime", freq="M"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_shortfall_baseload_or_shaped(csv_str_to_df):
+    # 'Baseload' and 'Shaped' share this branch. It compares 'Contracted Energy' against
+    # 'Hybrid' rather than 'Load' -- guaranteed_percent isn't used at all here, unlike the
+    # 'Pay as Produced'/'Pay as Consumed' branch above.
+    df = csv_str_to_df(
+        """
+        DateTime,           Contracted Energy,  Hybrid
+        2026-01-01 00:00,   70.0,                50.0
+        2026-02-01 00:00,   70.0,                90.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_shortfall(
+        df,
+        settlement_period="M",
+        contract_type="Baseload",
+        shortfall_penalty=50.0,
+        guaranteed_percent=80.0,
+    )
+
+    # Jan: Shortfall = max(70-50, 0) * 50 = 1000
+    # Feb: Shortfall = max(70-90, 0) * 50 = 0
+    expected = pd.DataFrame(
+        {
+            "Contracted Energy": [70.0, 70.0],
+            "Hybrid": [50.0, 90.0],
+            "Shortfall": [1000.0, 0.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-31", "2026-02-28"], name="DateTime", freq="M"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_shortfall_247_matching_percentage(csv_str_to_df):
+    # January has two intervals, so 'Match %' has to be averaged (not summed) across the
+    # month before the guaranteed-percent comparison. February covers the Load == 0 special
+    # case, where Match % is defined as 100 rather than dividing by zero.
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   Contracted Energy
+        2026-01-01 00:00,   100.0,  100.0
+        2026-01-15 00:00,   100.0,  50.0
+        2026-02-01 00:00,   0.0,    5.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_shortfall(
+        df,
+        settlement_period="M",
+        contract_type="24/7",
+        shortfall_penalty=100.0,
+        guaranteed_percent=90.0,
+    )
+
+    # Jan: Match % = [100, 50] -> mean 75 -> Shortfall % = max(90-75, 0) = 15
+    #   Shortfall = Load(sum=200) * 15/100 * 100 = 3000
+    # Feb: Load == 0 -> Match % = 100 -> Shortfall % = max(90-100, 0) = 0 -> Shortfall = 0
+    expected = pd.DataFrame(
+        {
+            "Load": [200.0, 0.0],
+            "Contracted Energy": [150.0, 5.0],
+            "Shortfall %": [15.0, 0.0],
+            "Shortfall": [3000.0, 0.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-31", "2026-02-28"], name="DateTime", freq="M"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_shortfall_invalid_settlement_period_raises(csv_str_to_df):
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   Contracted Energy
+        2026-01-01 00:00,   100.0,  70.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    with pytest.raises(ValueError, match="settlement_period should be one of"):
+        calculate_shortfall(
+            df,
+            settlement_period="W",
+            contract_type="Pay as Produced",
+            shortfall_penalty=50.0,
+            guaranteed_percent=80.0,
+        )
+
+
+def test_calculate_lgcs_under_and_oversupply(csv_str_to_df):
+    # Two separate days so both the undersupply and oversupply cases can be checked in
+    # isolation: day 1's contracted energy falls short of the guaranteed volume, day 2's
+    # exceeds it.
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   Contracted Energy
+        2026-01-01 00:00,   100.0,  50.0
+        2026-02-01 00:00,   100.0,  100.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_lgcs(
+        df,
+        settlement_period="M",
+        lgc_buy_price=10.0,
+        lgc_sell_price=5.0,
+        guaranteed_percent=80.0,
+    )
+
+    # Jan: Guaranteed = 100*0.8 = 80 -> Volume Difference = 80-50 = 30 (undersupply)
+    #   -> LGC Undersupply = 30*10 = 300, LGC Oversupply = 0
+    # Feb: Volume Difference = 80-100 = -20 (oversupply)
+    #   -> LGC Undersupply = 0, LGC Oversupply = -20*5 = -100
+    expected = pd.DataFrame(
+        {
+            "Load": [100.0, 100.0],
+            "Contracted Energy": [50.0, 100.0],
+            "Volume Difference": [30.0, -20.0],
+            "LGC Undersupply": [300.0, 0.0],
+            "LGC Oversupply": [0.0, -100.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-31", "2026-02-28"], name="DateTime", freq="M"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_lgcs_invalid_settlement_period_raises(csv_str_to_df):
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   Contracted Energy
+        2026-01-01 00:00,   100.0,  50.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    with pytest.raises(ValueError, match="settlement_period should be one of"):
+        calculate_lgcs(
+            df,
+            settlement_period="W",
+            lgc_buy_price=10.0,
+            lgc_sell_price=5.0,
+            guaranteed_percent=80.0,
+        )
