@@ -497,14 +497,14 @@ def calculate_bill(
     demonstrate the use of monthly settlement period we will use data with two interval from January and February.
 
     >>> volume_and_price = pd.DataFrame({
-    ... 'datetime': ['2023/01/01 00:30:00', '2023/01/01 01:00:00', '2023/02/01 00:30:00', '2023/02/01 01:00:00'],
+    ... 'DateTime': ['2023/01/01 00:30:00', '2023/01/01 01:00:00', '2023/02/01 00:30:00', '2023/02/01 01:00:00'],
     ... 'Load': [100.0, 100.0, 100.0, 100.0],
     ... 'Contracted Energy': [100.0, 100.0, 80.0, 80.0],
     ... 'RRP': [50.0, 50.0, 50.0, 50.0],
     ... 'Firming price': [80.0, 80.0, 80.0, 80.0]
     ... })
-    >>> volume_and_price['datetime'] = pd.to_datetime(volume_and_price['datetime'])
-    >>> volume_and_price = volume_and_price.set_index(keys='datetime', drop=True)
+    >>> volume_and_price['DateTime'] = pd.to_datetime(volume_and_price['DateTime'])
+    >>> volume_and_price = volume_and_price.set_index(keys='DateTime', drop=True)
 
     >>> calculate_bill(
     ... volume_and_price=volume_and_price,
@@ -521,12 +521,12 @@ def calculate_bill(
     ... indexation=1.0,
     ... index_period='Y',
     ... floor_price= -1000.0)
-                Wholesale Cost  PPA Settlement  ...  Shortfall Payments Received    Total
-    datetime                                    ...
+                   PPA Value  PPA Settlement  ...  Shortfall Payments Received    Total
+    DateTime                                  ...
     2023-01-31         15150.0          5150.0  ...                         -0.0  20100.0
     2023-02-28         12120.0          4120.0  ...                      -1000.0  18640.0
     <BLANKLINE>
-    [2 rows x 8 columns]
+    [2 rows x 10 columns]
 
     :param volume_and_price: Dataframe with datetime index, a column specifying the load  (MWh) named 'Load' and
         a column specifying the contracted energy (MWh) name 'Contracted Energy', a column named 'RRP' specifying the
@@ -556,7 +556,9 @@ def calculate_bill(
     :return: Results are returned in a dataframe on settlement period basis with the index specifying the end of
         the settlement period and an additional columns: 'PPA Value' (value of
         contracted energy at the indexed PPA strike price), 'PPA Settlement' (the cost of settling the PPA),
-        'Firming Costs', 'Network Costs', 'Revenue from on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs',
+        'PPA Final Cost' (PPA Settlement plus the underlying wholesale cost, i.e. what the PPA actually
+        costs on top of/instead of buying at spot), 'Firming Costs', 'Network Costs', 'Revenue from
+        on-sold RE', 'Revenue from excess LGCs', 'Cost of shortfall LGCs',
         'Shortfall Payments Received', 'Total'.
     """
     results = pd.DataFrame()

@@ -1,6 +1,7 @@
 # File to hold functions that will assist with testing, validation or other small formatting and calculation tasks that are secondary to the main functionality of the tool.
 import copy
 import json
+import logging
 import os
 from collections import Counter
 from datetime import timedelta
@@ -14,13 +15,15 @@ from ppa_analysis.tariffs import (
     convert_network_tariff_to_retail_tariff,
 )
 
+logger = logging.getLogger(__name__)
+
 
 # Test help functions:
 def _check_missing_data(df: pd.DataFrame) -> pd.DataFrame:
     """Checks and fills missing data in the DataFrame.
 
     This function checks if the DataFrame contains missing values (NaN). If missing
-    data is found, it fills the missing values with zeros and prints a message indicating that the data has been filled. If the DataFrame is empty, it prints a warning.
+    data is found, it fills the missing values with zeros and logs a warning indicating that the data has been filled. If the DataFrame is empty, it logs a warning.
 
     Args:
         df (pd.DataFrame): A DataFrame to check for missing data.
@@ -30,15 +33,15 @@ def _check_missing_data(df: pd.DataFrame) -> pd.DataFrame:
 
     Note:
         The function modifies the original DataFrame by filling NaN values with
-        zeros and prints warnings for empty or incomplete data.
+        zeros and logs warnings for empty or incomplete data.
     """
     if df.empty:
-        print("DataFrame is empty.")
+        logger.warning("DataFrame is empty.")
 
     nan_df = df.copy().dropna(how="any")
 
     if nan_df.shape != df.shape:
-        print("Some missing data found. Filled with zeros.")
+        logger.warning("Some missing data found. Filled with zeros.")
         df = df.fillna(0.0)
 
     return df
@@ -51,7 +54,7 @@ def get_interval_length(df: pd.DataFrame) -> int:
     This function calculates the time difference between the first and second
     timestamps, and the last and second-to-last timestamps in the 'DateTime' column
     of the DataFrame. If the intervals are consistent, the function returns the
-    interval length in minutes. If the intervals differ, it prints a warning and
+    interval length in minutes. If the intervals differ, it logs a warning and
     returns the interval length based on the first timestamp difference.
 
     Args:
@@ -62,7 +65,7 @@ def get_interval_length(df: pd.DataFrame) -> int:
         int: The time interval length in minutes between consecutive timestamps.
 
     Note:
-        If the interval lengths are inconsistent, the function prints a warning
+        If the interval lengths are inconsistent, the function logs a warning
         and returns the interval based on the first two timestamps.
     """
     df = df.copy().reset_index()
@@ -73,7 +76,7 @@ def get_interval_length(df: pd.DataFrame) -> int:
     if first_int == last_int:
         return int(first_int.total_seconds() / 60)
     else:
-        print("Interval lengths are different throughout dataset.\n")
+        logger.warning("Interval lengths are different throughout dataset.")
         return int(first_int.total_seconds() / 60)
 
 
@@ -351,8 +354,6 @@ def get_data_years(cache_directory):
     directory. Assumes that only generation, pricing and emissions are in the cache directory and that
     files are parquet files with the year being the last part of the filename before .parquet
     """
-    print(os.getcwd())
-    print(cache_directory)
     files_in_cache = os.listdir(cache_directory)
     years_cache = [
         f[-12:-8] for f in files_in_cache

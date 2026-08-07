@@ -2,12 +2,14 @@ import pandas as pd
 import pytest
 
 from ppa_analysis.bill_calc import (
+    calculate_bill,
     calculate_excess_electricity,
     calculate_firming,
     calculate_lgcs,
     calculate_ppa,
     calculate_shortfall,
     calculate_tariff_bill,
+    calculate_wholesale_bill,
 )
 
 
@@ -555,3 +557,78 @@ def test_calculate_lgcs_invalid_settlement_period_raises(csv_str_to_df):
             lgc_sell_price=5.0,
             guaranteed_percent=80.0,
         )
+
+
+def test_calculate_wholesale_bill(csv_str_to_df):
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   RRP
+        2026-01-01 00:00,   50.0,   40.0
+        2026-01-02 00:00,   100.0,  60.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+
+    result = calculate_wholesale_bill(df, settlement_period="D", lgc_buy_price=10.0)
+
+    # Day 1: Wholesale Cost = 50*40 = 2000, LGC Cost = 50*10 = 500, Total = 2500
+    # Day 2: Wholesale Cost = 100*60 = 6000, LGC Cost = 100*10 = 1000, Total = 7000
+    expected = pd.DataFrame(
+        {
+            "Wholesale Cost": [2000.0, 6000.0],
+            "LGC Cost": [500.0, 1000.0],
+            "Total": [2500.0, 7000.0],
+        },
+        index=pd.DatetimeIndex(["2026-01-01", "2026-01-02"], name="DateTime", freq="D"),
+    )
+    pd.testing.assert_frame_equal(result, expected, check_dtype=False)
+
+
+def test_calculate_bill_orchestrator_wiring(csv_str_to_df):
+    # Integration test: each component (PPA, firming, network, excess, LGCs, shortfall)
+    # already has its own dedicated test above, so this just checks that calculate_bill
+    # wires them together into the expected shape.
+    df = csv_str_to_df(
+        """
+        DateTime,           Load,   Contracted Energy,  RRP,   Firming price
+        2026-01-01 00:00,   100.0,  80.0,                50.0,  80.0
+        2026-01-01 12:00,   100.0,  80.0,                50.0,  80.0
+        2026-02-01 00:00,   100.0,  80.0,                50.0,  80.0
+        """,
+        index_col="DateTime",
+        parse_dates=True,
+    )
+    tariff_details = {"Network": _minimal_flatrate_tariff(0.05)}
+
+    result = calculate_bill(
+        volume_and_price=df,
+        settlement_period="M",
+        contract_type="Pay as Produced",
+        firming_type="Wholesale exposed",
+        tariff_details=tariff_details,
+        strike_price=75.0,
+        lgc_buy_price=10.0,
+        lgc_sell_price=5.0,
+        shortfall_penalty=50.0,
+        guaranteed_percent=80.0,
+        excess_price="Wholesale",
+        indexation=0,
+        index_period="Y",
+        floor_price=-1000.0,
+    )
+
+    assert list(result.columns) == [
+        "PPA Value",
+        "PPA Settlement",
+        "PPA Final Cost",
+        "Firming Costs",
+        "Network Costs",
+        "Revenue from on-sold RE",
+        "Revenue from excess LGCs",
+        "Cost of shortfall LGCs",
+        "Shortfall Payments Received",
+        "Total",
+    ]
+    # Two settlement periods: January and February.
+    assert len(result) == 2
