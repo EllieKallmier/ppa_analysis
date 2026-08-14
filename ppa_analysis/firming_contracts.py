@@ -21,6 +21,10 @@ def total_wholesale_exposure(
     :return: load_and_gen_data with additional column named 'Firming price' filled
         with relevant price data in $/MWh.
     """
+    # TODO: mutates load_and_gen_data in place rather than copying first — inconsistent
+    # with tariff_firming_col_fill/retail_tariff_contract below, which both .copy() before
+    # modifying. Same applies to part_wholesale_exposure just below. Flagging as a
+    # consistency/refactor candidate, not changing behaviour here.
     load_and_gen_data["Firming price"] = load_and_gen_data["RRP"].copy()
     return load_and_gen_data
 
@@ -84,15 +88,12 @@ def tariff_firming_col_fill(
         time_value,
     ) in tariff_component_details["TimeIntervals"].items():
         if time_value[0][0:2] == "24":
-            time_value[0] = time_value[1].replace("24", "00")
+            time_value[0] = time_value[0].replace("24", "00")
         if time_value[1][0:2] == "24":
             time_value[1] = time_value[1].replace("24", "00")
         if time_value[0] != time_value[1]:
             data_between_times = load_and_gen_data.between_time(
-                start_time=time_value[0],
-                end_time=time_value[1],
-                include_start=False,
-                include_end=True,
+                start_time=time_value[0], end_time=time_value[1], inclusive="right"
             )
         else:
             data_between_times = load_and_gen_data.copy()
@@ -172,9 +173,9 @@ def retail_tariff_contract(
 def choose_firming_type(
     firming_type: str,
     time_series_data: pd.DataFrame,
-    upper_bound: float = None,
-    lower_bound: float = None,
-    tariff_details: dict[str:float] = None,
+    upper_bound: float | None = None,
+    lower_bound: float | None = None,
+    tariff_details: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """
     Creates new column named "Firming price" in the time series DataFrame provided, which specifies the time varying

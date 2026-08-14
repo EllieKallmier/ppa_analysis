@@ -1,6 +1,7 @@
 # File to hold functions that will assist with testing, validation or other small formatting and calculation tasks that are secondary to the main functionality of the tool.
 import copy
 import json
+import logging
 import os
 from collections import Counter
 from datetime import timedelta
@@ -14,13 +15,15 @@ from ppa_analysis.tariffs import (
     convert_network_tariff_to_retail_tariff,
 )
 
+logger = logging.getLogger(__name__)
+
 
 # Test help functions:
 def _check_missing_data(df: pd.DataFrame) -> pd.DataFrame:
     """Checks and fills missing data in the DataFrame.
 
     This function checks if the DataFrame contains missing values (NaN). If missing
-    data is found, it fills the missing values with zeros and prints a message indicating that the data has been filled. If the DataFrame is empty, it prints a warning.
+    data is found, it fills the missing values with zeros and logs a warning indicating that the data has been filled. If the DataFrame is empty, it logs a warning.
 
     Args:
         df (pd.DataFrame): A DataFrame to check for missing data.
@@ -30,15 +33,16 @@ def _check_missing_data(df: pd.DataFrame) -> pd.DataFrame:
 
     Note:
         The function modifies the original DataFrame by filling NaN values with
-        zeros and prints warnings for empty or incomplete data.
+        zeros and logs warnings for empty or incomplete data.
     """
     if df.empty:
-        print("DataFrame is empty.")
+        # TODO: I feel like this should just be an error?
+        logger.warning("DataFrame is empty.")
 
     nan_df = df.copy().dropna(how="any")
 
     if nan_df.shape != df.shape:
-        print("Some missing data found. Filled with zeros.")
+        logger.warning("Some missing data found. Filled with zeros.")
         df = df.fillna(0.0)
 
     return df
@@ -51,7 +55,7 @@ def get_interval_length(df: pd.DataFrame) -> int:
     This function calculates the time difference between the first and second
     timestamps, and the last and second-to-last timestamps in the 'DateTime' column
     of the DataFrame. If the intervals are consistent, the function returns the
-    interval length in minutes. If the intervals differ, it prints a warning and
+    interval length in minutes. If the intervals differ, it logs a warning and
     returns the interval length based on the first timestamp difference.
 
     Args:
@@ -62,7 +66,7 @@ def get_interval_length(df: pd.DataFrame) -> int:
         int: The time interval length in minutes between consecutive timestamps.
 
     Note:
-        If the interval lengths are inconsistent, the function prints a warning
+        If the interval lengths are inconsistent, the function logs a warning
         and returns the interval based on the first two timestamps.
     """
     df = df.copy().reset_index()
@@ -73,13 +77,11 @@ def get_interval_length(df: pd.DataFrame) -> int:
     if first_int == last_int:
         return int(first_int.total_seconds() / 60)
     else:
-        print("Interval lengths are different throughout dataset.\n")
+        logger.warning("Interval lengths are different throughout dataset.")
         return int(first_int.total_seconds() / 60)
 
 
-def _check_interval_consistency(
-    df: pd.DataFrame, mins: int
-) -> tuple[bool, pd.Timestamp]:
+def _check_interval_consistency(df: pd.DataFrame, mins: int) -> bool:
     """Checks if the time intervals in the DataFrame are consistent.
 
     This function checks whether the difference between consecutive timestamps
@@ -92,11 +94,8 @@ def _check_interval_consistency(
             timestamps.
 
     Returns:
-        tuple: A tuple containing:
-            - bool: True if all intervals between consecutive timestamps are
-              consistent with the specified `mins`, False otherwise.
-            - pd.Timestamp: The first timestamp where the interval inconsistency
-              was detected, or the last valid timestamp if intervals are consistent.
+        bool: True if all intervals between consecutive timestamps are
+            consistent with the specified `mins`, False otherwise.
     """
     df = df.copy().reset_index()
     return (df["DateTime"].diff() == timedelta(minutes=mins)).iloc[1:].all()
@@ -250,20 +249,21 @@ def concat_shaped_profiles(
 
 def yearly_indexation(
     df: pd.DataFrame, strike_price: float, indexation: float | list[float]
-) -> pd.DataFrame:
+) -> pd.Series:
     """
     Helper function to calculate yearly indexation.
 
     The function takes a dataframe with an index of type datetime and returns the same dataframe with an additional
     column named 'Strike Price (Indexed)'. For each year after the initial year in the index, the strike price is
     increased by the specified indexation rate. If the indexation rate is provided as a float then the same rate is
-    used for all years. If a list is then each year uses the next indexation rate in the list and if there are more
+    used for all years. If a list is given then each year uses the next indexation rate in the list and if there are more
     years than rates in the list then last rate is reused.
 
     :param df: with datetime index
     :param strike_price: in $/MW/h
     :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
+    :return: Series named 'Strike Price (Indexed)' containing calculated values indexed
+        by the input df datetime index.
     """
 
     years = df.index.year.unique()
@@ -282,8 +282,6 @@ def yearly_indexation(
         spi_map[year] = strike_price
         strike_price += strike_price * indexation[i] / 100
 
-    spi_map[year] = strike_price
-
     df_with_strike_price = df.copy()
 
     df_with_strike_price["Strike Price (Indexed)"] = df_with_strike_price.index.year
@@ -296,7 +294,7 @@ def yearly_indexation(
 
 def quarterly_indexation(
     df: pd.DataFrame, strike_price: float, indexation: float | list[float]
-) -> pd.DataFrame:
+) -> pd.Series:
     """
     Helper function to calculate quarterly indexation.
 
@@ -309,7 +307,8 @@ def quarterly_indexation(
     :param df: with datetime index
     :param strike_price: in $/MWh
     :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
+    :return: Series named 'Strike Price (Indexed)' containing calculated values indexed
+        by the input df datetime index.
     """
 
     years = df.index.year.unique()
@@ -329,8 +328,6 @@ def quarterly_indexation(
     for i, quarter in enumerate(quarters):
         spi_map[quarter] = strike_price
         strike_price += strike_price * indexation[i] / 100
-
-    spi_map[quarter] = strike_price
 
     df_with_strike_price = df.copy()
 
@@ -355,8 +352,7 @@ def get_data_years(cache_directory):
     directory. Assumes that only generation, pricing and emissions are in the cache directory and that
     files are parquet files with the year being the last part of the filename before .parquet
     """
-    print(os.getcwd())
-    print(cache_directory)
+    # TODO: lots of potential updates here...
     files_in_cache = os.listdir(cache_directory)
     years_cache = [
         f[-12:-8] for f in files_in_cache
@@ -375,7 +371,7 @@ def get_data_years(cache_directory):
 # Function takes in the  generator LCOE info dictionary, and calculates LCOE
 # for only one generator with each call.
 # Returns LCOE value in $/MWh
-def calculate_lcoe(generator_info: dict[str:object]) -> float:
+def calculate_lcoe(generator_info: dict[str, object]) -> float:
     """
     Calculate LCOE for chosen generator.
 
@@ -425,7 +421,7 @@ def calculate_lcoe(generator_info: dict[str:object]) -> float:
 
 
 # ----- Fetch inputs and set up info_dict data to pass to later functions:
-def get_all_lcoes(generator_data_dict: dict) -> dict[str:float]:
+def get_all_lcoes(generator_data_dict: dict) -> dict[str, float]:
     """
     Calculate LCOE value for all selected renewable energy generators.
 
@@ -466,8 +462,6 @@ def get_all_lcoes(generator_data_dict: dict) -> dict[str:float]:
     return all_generator_lcoes
 
 
-# TODO: Ellie to add docstrings here
-# Helper function to read in json files (for network tariff selection)
 def read_json_file(filename):
     """Reads a JSON file and returns its contents.
 

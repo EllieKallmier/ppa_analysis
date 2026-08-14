@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 from mip import (
@@ -12,6 +14,8 @@ from mip import (
 )
 
 from ppa_analysis import advanced_settings
+
+logger = logging.getLogger(__name__)
 
 
 def run_battery_optimisation(
@@ -128,7 +132,7 @@ def run_battery_optimisation(
     status = m.optimize()
 
     if status == OptimizationStatus.INFEASIBLE:
-        print("This battery optimisation was infeasible.")
+        logger.warning("This battery optimisation was infeasible.")
         m.clear()
         return timeseries_data
 
