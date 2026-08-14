@@ -16,6 +16,12 @@ Create a Python new virtual environment and install the required dependencies. I
    - mac/linux: ```source env/bin/activate```
 4. Install dependencies: ```pip install -r requirements.txt```
 
+**Apple Silicon (M1/M2/M3/...) Macs:** the `mip` package's bundled CBC solver binary
+requires GNU Fortran's runtime library, which isn't present on macOS by default. Install
+it via Homebrew before running anything that uses the battery, load flexibility, or
+hybrid contract optimisation: ```brew install gcc```. Without this, those features will
+fail with a `Library not loaded: .../libgfortran.5.dylib` error.
+
 # Notebook Interface
 
 The tools capability can be explored and utilised through [interface.ipynb](interface.ipynb). 
