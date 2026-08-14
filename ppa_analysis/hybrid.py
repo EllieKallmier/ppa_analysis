@@ -13,12 +13,16 @@ type. Note these contract specific functions can also be used directly if desire
 performs the optimisation, and may be useful to the advanced user who want to implement a customised methodology.
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 from mip import CBC, CONTINUOUS, GUROBI, Model, OptimizationStatus, minimize, xsum
 
 from ppa_analysis import advanced_settings
 from ppa_analysis.helper_functions import *  # noqa: F403
+
+logger = logging.getLogger(__name__)
 
 
 def run_hybrid_optimisation(
@@ -177,7 +181,7 @@ def run_hybrid_optimisation(
     # on the contract type.
     # TODO: get rid of this recursion!!
     if status == OptimizationStatus.INFEASIBLE:
-        print("Infeasible problem under current constraints.")
+        logger.warning("Infeasible problem under current constraints.")
         m.clear()
         return  #    maybe need to raise an error here instead/as well? For user benefit?
 

@@ -5,6 +5,7 @@ User facing functionality is provided through the function daily_load_shifting s
 
 """
 
+import logging
 from datetime import timedelta
 
 import numpy as np
@@ -13,8 +14,10 @@ from mip import CBC, CONTINUOUS, GUROBI, Model, OptimizationStatus, minimize, xs
 
 from ppa_analysis import advanced_settings
 
+logger = logging.getLogger(__name__)
 
-def _get_daily_load_sums(df: pd.DataFrame) -> pd.DataFrame:
+
+def _get_daily_load_sums(df: pd.DataFrame) -> pd.Series:
     """Calculates the daily sum of load values from the DataFrame.
 
     This function resamples the data by day ('D') and calculates the sum of
@@ -25,7 +28,7 @@ def _get_daily_load_sums(df: pd.DataFrame) -> pd.DataFrame:
             containing electricity consumption or load values.
 
     Returns:
-        pd.DataFrame: A DataFrame with the daily sum of 'Load' values.
+        pd.Series: A Series with the daily sum of 'Load' values.
     """
     return df["Load"].copy().resample("D").sum(numeric_only=True)
 
@@ -94,7 +97,7 @@ def daily_load_shifting(
     lower_price: float = 0.0,
     ramp_up_price: float = 0.01,
     ramp_down_price: float = 0.01,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Optimises load shifting to minimise cost of purchasing energy not covered by a PPA at the wholesale spot price.
 
@@ -133,18 +136,19 @@ def daily_load_shifting(
     :param ramp_down_price:float, $/MWh, the cost in the objective function of ramping the load down, used to
         disincentives sharp changes in the load.
     :return:
-        pd.DataFrame, the timeseries data supplied with an additional column
-            'Load with flex' specifying the load after adding flexibility.
+        tuple:
+            - pd.DataFrame, the timeseries data supplied with an additional column
+                'Load with flex' specifying the load after adding flexibility.
 
-        pd.Dataframe with a datetime index and the columns (all in MWh):
-            'Load dispatch': the energy dispatch above the base load profile
-            'Contracted Energy': the volume contracted from renewable energy generators
-            'Original load': the load profile before shifting
-            'Base load': the inflexible base load profile
-            'Firming': the load not met by the PPA after load shifting
-            'Raised load': the next increase in load
-            'Ramp up': the ramp up in net load (base load plus dispatch) from the previous interval
-            'Ramp down': the ramp down in net load (base load plus dispatch) from the previous interval
+            - pd.Dataframe with a datetime index and the columns (all in MWh):
+                'Load dispatch': the energy dispatch above the base load profile
+                'Contracted Energy': the volume contracted from renewable energy generators
+                'Original load': the load profile before shifting
+                'Base load': the inflexible base load profile
+                'Firming': the load not met by the PPA after load shifting
+                'Raised load': the next increase in load
+                'Ramp up': the ramp up in net load (base load plus dispatch) from the previous interval
+                'Ramp down': the ramp down in net load (base load plus dispatch) from the previous interval
     """
 
     # Because time stamps are time ending for period, to make sure the midnight time stamp is assigned to the
@@ -315,7 +319,7 @@ def daily_load_shifting(
                 status = m.optimize()
 
                 if status == OptimizationStatus.INFEASIBLE:
-                    print("Load shifting optimisation infeasible.")
+                    logger.warning("Load shifting optimisation infeasible.")
                     m.clear()
 
                 if (

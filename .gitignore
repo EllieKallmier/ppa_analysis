@@ -6,12 +6,14 @@ env/
 *results/
 *script_for_flex.py
 *flow_notebook.ipynb
-archive/*
+archive
 /data/
 notes/
 
 # Claude/code helper specific:
 CLAUDE.md
+CLAUDE.local.md
+.Claude
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -123,7 +125,3 @@ cython_debug/
 # Lockfiles
 .~lock*.xlsx#
 .~lock*.csv#
-
-# Claude Code
-.claude/settings.local.json
-CLAUDE.local.md
