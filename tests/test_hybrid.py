@@ -89,6 +89,35 @@ def test_hybrid_baseload_fully_contracts_single_matching_generator():
     assert percentages == _expected_percentages()
 
 
+def test_hybrid_baseload_monthly_redef_period_steps_by_calendar_month():
+    # redef_period='M' takes a different code path to the 'Y' case above
+    # (resample('M') per month, mapped back by month number)
+    #
+    # January is flat at 10 (Load == Gen1), February flat at 20 - so the
+    # monthly-average Contracted Energy should step from 10 to 20 at the
+    # month boundary, and the matching generator still makes 100% the
+    # obviously correct contracted amount.
+    jan_idx = pd.date_range("2026-01-01 01:00", periods=48, freq="h")
+    feb_idx = pd.date_range("2026-02-01 01:00", periods=48, freq="h")
+    df = pd.DataFrame(
+        {
+            "Load": [10.0] * 48 + [20.0] * 48,
+            "Gen1": [10.0] * 48 + [20.0] * 48,
+            "RRP": [100.0] * 96,
+        },
+        index=jan_idx.append(feb_idx),
+    )
+
+    result, percentages = hybrid_baseload(100.0, df, GENERATOR_INFO, "M", None)
+
+    expected = df.copy()
+    expected["Contracted Energy"] = [10.0] * 48 + [20.0] * 48
+    expected["Hybrid"] = [10.0] * 48 + [20.0] * 48
+
+    pd.testing.assert_frame_equal(result, expected, check_exact=False)
+    assert percentages == _expected_percentages()
+
+
 def test_hybrid_shaped_fully_contracts_single_matching_generator():
     df, percentages = hybrid_shaped(
         100.0, _load_matches_generator_df(), GENERATOR_INFO, "Y", 50.0

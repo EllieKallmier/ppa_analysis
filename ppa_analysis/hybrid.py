@@ -417,6 +417,8 @@ def hybrid_baseload(
         }
     """
 
+    time_series_data = time_series_data.copy()
+
     if contracted_amount < 0:
         raise ValueError("contracted_amount must be greater than 0.")
 
