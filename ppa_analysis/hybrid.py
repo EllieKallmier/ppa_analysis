@@ -25,10 +25,10 @@ def run_hybrid_optimisation(
     contracted_energy: pd.Series,
     wholesale_prices: pd.Series,
     generation_data: pd.DataFrame,
-    gen_costs: dict[str:float],
+    gen_costs: dict[str, float],
     total_sum: float,
     cfe_score_min: float = None,
-) -> tuple[pd.Series, dict[str : dict[str:float]]]:
+) -> tuple[pd.Series, dict[str, dict[str, float]]]:
     """
     Calculates an optimal mix of volume to contract from a set of renewable energy generators.
 
@@ -219,9 +219,9 @@ def run_hybrid_optimisation(
         ].round(2)
         check_df = check_df[(check_df["Check unmatched"] == False)].copy()
 
-        assert (
-            check_df.empty == True
-        ), "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
+        assert check_df.empty == True, (
+            "Unmatched and/or excess variables are not being calculated correctly. Check constraints."
+        )
 
         # clear the model at end of run so memory isn't overworked.
         m.clear()
@@ -229,11 +229,10 @@ def run_hybrid_optimisation(
         return hybrid_trace["Hybrid"], results
 
 
-#
 def hybrid_shaped(
     contracted_amount: float,
     time_series_data: pd.DataFrame,
-    generator_info: dict[str:float],
+    generator_info: dict[str, float],
     redef_period: str,
     percentile_val: float,
 ) -> pd.DataFrame:
@@ -367,7 +366,7 @@ def hybrid_shaped(
 def hybrid_baseload(
     contracted_amount: float,
     time_series_data: pd.DataFrame,
-    generator_info: dict[str:float],
+    generator_info: dict[str, float],
     redef_period: str,
     percentile_val: float,
 ) -> pd.DataFrame:
@@ -485,7 +484,7 @@ def hybrid_baseload(
 def hybrid_247(
     contracted_amount: float,
     time_series_data: pd.DataFrame,
-    generator_info: dict[str:float],
+    generator_info: dict[str, float],
     redef_period: str,
     percentile_val: float,
 ) -> pd.DataFrame:
@@ -566,7 +565,7 @@ def hybrid_247(
 def hybrid_pap(
     contracted_amount: float,
     time_series_data: pd.DataFrame,
-    generator_info: dict[str:float],
+    generator_info: dict[str, float],
     redef_period: str,
     percentile_val: float,
 ) -> pd.DataFrame:
@@ -649,7 +648,7 @@ def hybrid_pap(
 def hybrid_pac(
     contracted_amount: float,
     time_series_data: pd.DataFrame,
-    generator_info: dict[str:float],
+    generator_info: dict[str, float],
     redef_period: str,
     percentile_val: float,
 ) -> pd.DataFrame:
@@ -735,7 +734,7 @@ def create_hybrid_generation(
     contract_type: str,
     contracted_amount: float,
     time_series_data: pd.DataFrame,
-    generator_info: dict[str:float],
+    generator_info: dict[str, float],
     redef_period: str = None,
     percentile_val: float = None,
 ) -> pd.DataFrame:

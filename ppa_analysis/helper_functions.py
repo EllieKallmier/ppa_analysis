@@ -371,7 +371,7 @@ def get_data_years(cache_directory):
 # Function takes in the  generator LCOE info dictionary, and calculates LCOE
 # for only one generator with each call.
 # Returns LCOE value in $/MWh
-def calculate_lcoe(generator_info: dict[str:object]) -> float:
+def calculate_lcoe(generator_info: dict[str, object]) -> float:
     """
     Calculate LCOE for chosen generator.
 
@@ -421,7 +421,7 @@ def calculate_lcoe(generator_info: dict[str:object]) -> float:
 
 
 # ----- Fetch inputs and set up info_dict data to pass to later functions:
-def get_all_lcoes(generator_data_dict: dict) -> dict[str:float]:
+def get_all_lcoes(generator_data_dict: dict) -> dict[str, float]:
     """
     Calculate LCOE value for all selected renewable energy generators.
 
