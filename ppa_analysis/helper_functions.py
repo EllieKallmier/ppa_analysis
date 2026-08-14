@@ -36,6 +36,7 @@ def _check_missing_data(df: pd.DataFrame) -> pd.DataFrame:
         zeros and logs warnings for empty or incomplete data.
     """
     if df.empty:
+        # TODO: I feel like this should just be an error?
         logger.warning("DataFrame is empty.")
 
     nan_df = df.copy().dropna(how="any")
@@ -80,9 +81,7 @@ def get_interval_length(df: pd.DataFrame) -> int:
         return int(first_int.total_seconds() / 60)
 
 
-def _check_interval_consistency(
-    df: pd.DataFrame, mins: int
-) -> tuple[bool, pd.Timestamp]:
+def _check_interval_consistency(df: pd.DataFrame, mins: int) -> bool:
     """Checks if the time intervals in the DataFrame are consistent.
 
     This function checks whether the difference between consecutive timestamps
@@ -95,11 +94,8 @@ def _check_interval_consistency(
             timestamps.
 
     Returns:
-        tuple: A tuple containing:
-            - bool: True if all intervals between consecutive timestamps are
-              consistent with the specified `mins`, False otherwise.
-            - pd.Timestamp: The first timestamp where the interval inconsistency
-              was detected, or the last valid timestamp if intervals are consistent.
+        bool: True if all intervals between consecutive timestamps are
+            consistent with the specified `mins`, False otherwise.
     """
     df = df.copy().reset_index()
     return (df["DateTime"].diff() == timedelta(minutes=mins)).iloc[1:].all()
@@ -253,7 +249,7 @@ def concat_shaped_profiles(
 
 def yearly_indexation(
     df: pd.DataFrame, strike_price: float, indexation: float | list[float]
-) -> pd.DataFrame:
+) -> pd.Series:
     """
     Helper function to calculate yearly indexation.
 
@@ -266,7 +262,8 @@ def yearly_indexation(
     :param df: with datetime index
     :param strike_price: in $/MW/h
     :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
+    :return: Series named 'Strike Price (Indexed)' containing calculated values indexed
+        by the input df datetime index.
     """
 
     years = df.index.year.unique()
@@ -297,7 +294,7 @@ def yearly_indexation(
 
 def quarterly_indexation(
     df: pd.DataFrame, strike_price: float, indexation: float | list[float]
-) -> pd.DataFrame:
+) -> pd.Series:
     """
     Helper function to calculate quarterly indexation.
 
@@ -310,7 +307,8 @@ def quarterly_indexation(
     :param df: with datetime index
     :param strike_price: in $/MWh
     :param indexation: as percentage i.e. 5 is an indexation rate of 5 %
-    :return: The input dataframe with an additional column named 'Strike Price (Indexed)'
+    :return: Series named 'Strike Price (Indexed)' containing calculated values indexed
+        by the input df datetime index.
     """
 
     years = df.index.year.unique()
@@ -354,6 +352,7 @@ def get_data_years(cache_directory):
     directory. Assumes that only generation, pricing and emissions are in the cache directory and that
     files are parquet files with the year being the last part of the filename before .parquet
     """
+    # TODO: lots of potential updates here...
     files_in_cache = os.listdir(cache_directory)
     years_cache = [
         f[-12:-8] for f in files_in_cache
@@ -463,8 +462,6 @@ def get_all_lcoes(generator_data_dict: dict) -> dict[str:float]:
     return all_generator_lcoes
 
 
-# TODO: Ellie to add docstrings here
-# Helper function to read in json files (for network tariff selection)
 def read_json_file(filename):
     """Reads a JSON file and returns its contents.
 
