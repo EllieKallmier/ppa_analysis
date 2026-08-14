@@ -900,7 +900,7 @@ def collect_and_combine_data(
     )
     load_data = load_data[
         (load_data.index >= f"{year_to_load}-01-01 00:00:00")
-        & (load_data.index < f"{year_to_load+1}-01-01 00:00:00")
+        & (load_data.index < f"{year_to_load + 1}-01-01 00:00:00")
     ]
 
     # ----------------------------- Get Generation Data ----------------------------

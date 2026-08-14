@@ -119,12 +119,6 @@ def test_daily_load_shifting_moves_flexible_load_to_the_cheaper_hour(csv_str_to_
     base1[3] = 4.0  # pulled down by day 2's 04:00 dip
     base1[5] = 4.0  # equals day 1's own 06:00 dip, so not flagged flexible
     firming1 = [0.0] * 24
-    raised1 = [0.0] * 24
-    raised1[5] = 6.0  # 06:00 filled from 4 up to 10, above its own original load
-    ramp_up1 = [0.0] * 24
-    ramp_up1[3] = 6.0  # 03:00 -> 04:00, base rises back from the 04:00 dip
-    ramp_down1 = [0.0] * 24
-    ramp_down1[2] = -6.0  # 03:00 -> 04:00 dip, stored against the earlier hour
     flex1 = [10.0] * 24
     flex1[3] = 4.0  # 04:00 stays dipped - the flexible load moved away from here
 
@@ -135,9 +129,6 @@ def test_daily_load_shifting_moves_flexible_load_to_the_cheaper_hour(csv_str_to_
             "Original load": original1,
             "Base load": base1,
             "Firming": firming1,
-            "Raised load": raised1,
-            "Ramp up": ramp_up1,
-            "Ramp down": ramp_down1,
             "Load with flex": flex1,
         },
         index=day1_index,
@@ -155,9 +146,6 @@ def test_daily_load_shifting_moves_flexible_load_to_the_cheaper_hour(csv_str_to_
             "Original load": original2,
             "Base load": base2,
             "Firming": [float("nan")] * 24,
-            "Raised load": [float("nan")] * 24,
-            "Ramp up": [float("nan")] * 24,
-            "Ramp down": [float("nan")] * 24,
             "Load with flex": flex2,
         },
         index=day2_index,
@@ -206,9 +194,6 @@ def test_daily_load_shifting_passes_partial_day_through_unchanged(csv_str_to_df)
             "Original load": [10.0, 12.0, 8.0],
             "Base load": [float("nan")] * 3,
             "Firming": [float("nan")] * 3,
-            "Raised load": [float("nan")] * 3,
-            "Ramp up": [float("nan")] * 3,
-            "Ramp down": [float("nan")] * 3,
             "Load with flex": [float("nan")] * 3,
         },
         index=df.index,

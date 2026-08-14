@@ -170,9 +170,6 @@ def daily_load_shifting(
             "Original load",
             "Base load",
             "Firming",
-            "Raised load",
-            "Ramp up",
-            "Ramp down",
         ]
     )
 
@@ -264,7 +261,7 @@ def daily_load_shifting(
                     xsum(
                         (
                             unmatched[i] * wholesale_prices[i]
-                            + -lowered_load[i] * lower_price
+                            - lowered_load[i] * lower_price
                             + raised_load[i] * raise_price
                             + ramp_up[i] * ramp_up_price
                             - ramp_down[i] * ramp_down_price
@@ -329,9 +326,6 @@ def daily_load_shifting(
                     # Get results:
                     dispatch = [load_dispatch[i].x for i in len_day]
                     firm = [unmatched[i].x for i in len_day]
-                    raised = [raised_load[i].x for i in len_day]
-                    r_up = [ramp_up[i].x for i in len_day]
-                    r_down = [ramp_down[i].x for i in len_day]
 
                     day_result = pd.DataFrame(
                         {
@@ -340,9 +334,6 @@ def daily_load_shifting(
                             "Original load": original_load,
                             "Base load": base_load,
                             "Firming": firm,
-                            "Raised load": raised,
-                            "Ramp up": r_up,
-                            "Ramp down": r_down,
                         },
                         index=data_for_one_day.index,
                     )

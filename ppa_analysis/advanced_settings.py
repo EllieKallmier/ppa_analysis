@@ -77,12 +77,6 @@ FLEX_RATING_VALUES = {
     "Very Low": 0.8,
 }
 
-# Set LCOE parameters
-
-# Discount rate as a float to be applied in LCOE calculations
-DISCOUNT_RATE = 0.07
-
-
 # Optimisation parameters
 
 # Solver to use

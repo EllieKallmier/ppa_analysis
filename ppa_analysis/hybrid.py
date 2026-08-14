@@ -177,9 +177,6 @@ def run_hybrid_optimisation(
     hybrid_trace = pd.DataFrame(generation_data)
     hybrid_trace["Hybrid"] = 0
 
-    # If the optimisation is infeasible: try again with different constraints based
-    # on the contract type.
-    # TODO: get rid of this recursion!!
     if status == OptimizationStatus.INFEASIBLE:
         logger.warning("Infeasible problem under current constraints.")
         m.clear()

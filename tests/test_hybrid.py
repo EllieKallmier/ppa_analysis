@@ -42,7 +42,9 @@ def _expected_percentages():
 
 
 def test_hybrid_pap_fully_contracts_single_matching_generator():
-    df, percentages = hybrid_pap(100.0, _load_matches_generator_df(), GENERATOR_INFO, None, None)
+    df, percentages = hybrid_pap(
+        100.0, _load_matches_generator_df(), GENERATOR_INFO, None, None
+    )
 
     expected = _load_matches_generator_df()
     expected["Hybrid"] = 10.0
@@ -52,7 +54,9 @@ def test_hybrid_pap_fully_contracts_single_matching_generator():
 
 
 def test_hybrid_pac_fully_contracts_single_matching_generator():
-    df, percentages = hybrid_pac(100.0, _load_matches_generator_df(), GENERATOR_INFO, None, None)
+    df, percentages = hybrid_pac(
+        100.0, _load_matches_generator_df(), GENERATOR_INFO, None, None
+    )
 
     expected = _load_matches_generator_df()
     expected["Hybrid"] = 10.0
@@ -62,7 +66,9 @@ def test_hybrid_pac_fully_contracts_single_matching_generator():
 
 
 def test_hybrid_247_fully_contracts_single_matching_generator():
-    df, percentages = hybrid_247(100.0, _load_matches_generator_df(), GENERATOR_INFO, None, None)
+    df, percentages = hybrid_247(
+        100.0, _load_matches_generator_df(), GENERATOR_INFO, None, None
+    )
 
     expected = _load_matches_generator_df()
     expected["Hybrid"] = 10.0
