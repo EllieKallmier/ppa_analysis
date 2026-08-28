@@ -25,9 +25,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "jupyterlab==4.2.0",
-    "notebook==7.2.0",
-    "qtconsole==5.5.2",
+    "jupyterlab>=4.6.3",
+    "notebook>=7.6.2",
+    "qtconsole>=5.7.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.0.0",
 ]
