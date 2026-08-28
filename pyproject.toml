@@ -25,12 +25,20 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "jupyterlab==4.2.0",
-    "notebook==7.2.0",
-    "qtconsole==5.5.2",
+    "jupyterlab>=4.6.3",
+    "notebook>=7.6.2",
+    "qtconsole>=5.7.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.0.0",
 ]
+
+[tool.uv]
+# mip 1.16rc0 declares `cffi>=1.15` with no upper bound, but its CBC bindings
+# predate cffi 2.x and abort the solver on Linux (SIGABRT, exit 134, before the
+# first battery test completes). macOS is unaffected, so CI catches this and
+# local runs don't. Bounded here rather than added to `dependencies` because we
+# don't use cffi ourselves - this only limits what mip is allowed to pull in.
+constraint-dependencies = ["cffi<2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
